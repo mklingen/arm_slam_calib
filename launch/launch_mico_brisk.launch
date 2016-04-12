@@ -1,0 +1,52 @@
+<launch>
+    <node name="arm_slam_calib" pkg="arm_slam_calib" type="real" output="screen">
+     <param name="use_sim_time"                   value="true" />
+     <param name="encoder_noise_level"            value="0.15"/>
+     <param name ="extrinsic_noise_level"         value="1.0"/>
+     <param name="extrinsic_rot_noise_level"      value="0.1"/>
+     <param name="landmark_noise_level"           value="20.0"/>
+     <param name="projection_noise_level"         value="1.0"/>
+     <param name="run_ransac"                     value="true"/>
+     <param name="save_images"                    value="false"/>
+     <param name="generate_stitched_point_clouds" value="true"/>
+     <param name="generate_current_point_cloud"   value="true"/>
+     <param name="draw_estimate_robot"            value="false"/>
+     <param name="use_encoder_deadband"           value="true"/>
+     <param name="encoder_deadband"               value="0.05"/>
+     <param name="optimization_mode"              value="ISAM"/>
+     <param name="max_min_x"                      value="0"/>
+     <param name="max_min_y"                      value="0"/>
+     <param name="max_max_x"                      value="99999"/>
+     <param name="max_max_y"                      value="99999"/>
+     <param name="do_feature_matching"            value="true"/>
+     <param name="hamming_threshold"              value="60"/>
+     <param name="ratio_threshold"                value="1.25"/>
+     <param name="draw_good_features"             value="true"/>
+     <param name="draw_good_matches"              value="true"/>
+     <param name="draw_bad_features"              value="false"/>
+     <param name="draw_bad_matches"               value="false"/>
+     <param name="draw_candidates"                value="false"/>
+     <param name="draw_grid"                      value="true"/>
+     <param name="free_joints"                    value="[mico_joint_1, mico_joint_2, mico_joint_3, mico_joint_4, mico_joint_5, mico_joint_6]"/>
+     <param name="camera_mount_link"              value="mico_end_effector"/>
+     <param name="urdf"                           value="package://ada_description/robots/mico.urdf"/>
+     <param name="rgb_topic"                      value="/camera/rgb/image_rect_color"/>
+     <param name="rgb_info"                       value="/camera/rgb/camera_info"/>
+     <param name="depth_topic"                    value="/camera/depth/image_rect_raw"/>
+     <param name="depth_info"                     value="/camera/depth/camera_info"/>
+     <param name="joint_state_topic"              value="/mico_arm_driver/out/joint_state"/>
+     <rosparam param="extrinsic_initial_guess_translation">[0.0136688, 0.0486435, -0.0924387]</rosparam>
+     <rosparam param="extrinsic_initial_guess_rotation">[0, 0, 3.14159]</rosparam>
+     <param name="drift_noise"    value="0.05"/>
+     <param name="use_drift_noise" value="true"/>
+     <param name="robust_cauchy_multiplier" value="3.0"/>
+     <param name="draw_landmarks" value="true"/>
+     <param name="draw_pointclouds" value="true"/>
+     <param name="draw_extrinsic_marginal" value="false"/>
+     <param name="draw_observation" value="false"/>
+     <param name="draw_extrinsic_marginal" value="false"/>
+     <param name="draw_trajectory" value="false"/>
+     <param name="keyframe_threshold" value="0.08"/>
+     <param name="do_slam" value="false"/>
+    </node>
+</launch>

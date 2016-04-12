@@ -1,0 +1,72 @@
+/*
+ * touch_filter_sim.cpp
+ *
+ *  Created on: Oct 14, 2015
+ *      Author: mklingen
+ */
+
+#include <dart/dart.h>
+#include <stdio.h>
+#include <ros/ros.h>
+#include <fstream>
+#include <dart_rviz/InteractiveMarkerViewer.h>
+#include <r3/util/CatkinResourceRetriever.h>
+// Camera observations of landmarks (i.e. pixel coordinates) will be stored as Point2 (x, y).
+#include <gtsam/geometry/Point2.h>
+
+// Inference and optimization
+#include <gtsam/inference/Symbol.h>
+#include <gtsam/nonlinear/NonlinearFactorGraph.h>
+#include <gtsam/nonlinear/DoglegOptimizer.h>
+#include <gtsam/nonlinear/Values.h>
+
+// SFM-specific factors
+#include <gtsam/slam/PriorFactor.h>
+#include <gtsam/slam/GeneralSFMFactor.h> // does calibration !
+
+int main(int argc, char** argv)
+{
+    ros::init(argc, argv, "arm_calib_sim");
+    // Initialize OpenRAVE
+    ros::NodeHandle nh("~");
+
+    const std::shared_ptr<r3::util::CatkinResourceRetriever> resourceRetriever = std::make_shared<r3::util::CatkinResourceRetriever>();
+
+    dart::common::ResourcePtr resource = resourceRetriever->retrieve("package://ada_description/robots/mico.urdf");
+
+    if (!resource)
+    {
+        std::cerr << "Could not get resource\n";
+    }
+    else
+    {
+        if(resourceRetriever->exists("package://ada_description/robots/mico.urdf"))
+        {
+            std::cout << "URI exists\n";
+        }
+    }
+    dart::utils::DartLoader urdfLoader;
+    const dart::dynamics::SkeletonPtr skeleton= urdfLoader.parseSkeleton("package://ada_description/robots/mico.urdf", resourceRetriever);
+
+    if (!skeleton)
+    {
+       std::cerr << "Failed loading robot\n";
+       return 1;
+    }
+
+    dart::simulation::WorldPtr world = std::make_shared<dart::simulation::World>();
+    world->addSkeleton(skeleton);
+
+    dart::rviz::InteractiveMarkerViewer viewer("dart_markers");
+    viewer.addSkeleton(skeleton);
+
+    ros::Rate hz(60);
+
+    for (int t = 0; t < 1500; t++)
+    {
+        viewer.update();
+        hz.sleep();
+
+    }
+}
+
