@@ -25,6 +25,8 @@ namespace gtsam
                              const Eigen::aligned_vector<gtsam::Pose3>& jointPoseOffsets_,
                              const std::vector<bool>& modifyPoses_);
 
+            static RobotCalibration Identity(const dart::dynamics::GroupPtr& arm_);
+
             inline dart::dynamics::GroupPtr GetArm() const { return arm; }
             inline const Eigen::aligned_vector<gtsam::Pose3>& GetPoseOffsets() const { return jointPoseOffsets; }
             inline const Eigen::aligned_vector<Eigen::Isometry3d>& GetOriginalPoses() const { return originalJointPoses; }
@@ -64,7 +66,7 @@ namespace gtsam
                 Eigen::aligned_vector<gtsam::Pose3> newPoses = jointPoseOffsets;
                 for (size_t i = 0; i < jointPoseOffsets.size(); i++)
                 {
-                    gtsam::Vector subretraction = delta.block(0, i * 6, 1, 6);
+                    gtsam::Vector6 subretraction = delta.segment<6>(i * 6);
                     newPoses[i] = jointPoseOffsets.at(i).retract(subretraction);
                 }
                 return RobotCalibration(arm, newPoses, modifyPoses);
@@ -76,7 +78,7 @@ namespace gtsam
                 gtsam::Vector output = gtsam::Vector::Zero(dim());
                 for (size_t i = 0; i < jointPoseOffsets.size(); i++)
                 {
-                    output.block(0, i * 6, 1, 6) = jointPoseOffsets.at(i).localCoordinates(r2.GetPoseOffsets().at(i));
+                    output.segment<6>(i * 6) = jointPoseOffsets.at(i).localCoordinates(r2.GetPoseOffsets().at(i));
                 }
 
                 return output;
@@ -92,9 +94,7 @@ namespace gtsam
     class RobotModifier
     {
         public:
-            RobotModifier();
-            RobotModifier(std::mutex* mutex_,
-                          const RobotCalibration& calibration_,
+            RobotModifier(const RobotCalibration& calibration_,
                           const gtsam::Vector& q_);
 
             virtual ~RobotModifier();
@@ -106,7 +106,6 @@ namespace gtsam
             RobotCalibration calibration;
             gtsam::Vector q;
             gtsam::Vector originalQ;
-            std::mutex* mutex;
             bool modified;
     };
 

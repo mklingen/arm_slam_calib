@@ -77,7 +77,7 @@ int main(int argc, char** argv)
     bool drawObs = false;
     bool drawCamera = false;
     bool drawTraj = true;
-
+    size_t step_rate = 10;
 
 
     std::ofstream offsetFile("offsets.txt", std::ios::out);
@@ -85,13 +85,14 @@ int main(int argc, char** argv)
     std::ofstream extrinsicFile("extrinsic_errors.txt", std::ios::out);
 
 
-    for(size_t i = 0; i < iters; i++)
+    for(size_t i = 0; i < iters; i+=step_rate)
     {
         calib.SimulationStep(i);
         if (i > 1)
         {
             calib.OptimizeStep();
         }
+
         calib.DrawState(i, 0, calib.initialEstimate, 0.0f, 0.8f, 0.8f, 1.0f,  drawLandmark, drawTraj, drawObs, drawCamera);
         calib.DrawState(i, 1, calib.currentEstimate, 0.8f, 0.0f, 0.0f, 1.0f,  drawLandmark, drawTraj, drawObs, drawCamera);
         calib.DrawState(i, 2, calib.groundTruth, 0.0f, 0.8f, 0.0f, 1.0f,  drawLandmark, drawTraj, drawObs, drawCamera);

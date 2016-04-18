@@ -8,6 +8,8 @@
 #ifndef ARMSLAMCALIB_H_
 #define ARMSLAMCALIB_H_
 
+#include <arm_slam_calib/RobotModifier.h>
+
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 
@@ -76,8 +78,9 @@ namespace gtsam
                         fy(640),
                         cx(640 / 2),
                         cy(480 /2),
-                        encoderNoiseLevel(0.1),
+                        encoderNoiseLevel(0.01),
                         extrinsicNoiseLevel(0.01),
+                        kinematicNoise(0.1),
                         extrinsicRotNoiseLevel(0.01),
                         landmarkNoiseLevel(30.0),
                         driftNoise(0.05),
@@ -87,12 +90,12 @@ namespace gtsam
                         saveImages(false),
                         generateStitchedPointClouds(true),
                         generateCurrentPointCloud(true),
-                        computeExtrinsicMarginals(true),
+                        computeExtrinsicMarginals(false),
                         drawEstimateRobot(false),
                         useDeadBand(false),
                         addDriftNoise(false),
                         deadBandSize(0.05),
-                        optimizationMode(BatchDogleg),
+                        optimizationMode(ISAM),
                         simulated(false),
                         doOptimize(true),
                         addSimPerlinNoise(true),
@@ -120,11 +123,13 @@ namespace gtsam
                     double cy;
                     double encoderNoiseLevel;
                     double extrinsicNoiseLevel;
+                    double kinematicNoise;
                     double extrinsicRotNoiseLevel;
                     double landmarkNoiseLevel;
                     double projectionNoiseLevel;
                     double driftNoise;
                     gtsam::Pose3 extrinsicInitialGuess;
+                    gtsam::RobotCalibration kinematicsInitialGuess;
                     bool runRansac;
                     bool saveImages;
                     bool generateStitchedPointClouds;
@@ -189,8 +194,9 @@ namespace gtsam
             void UpdateViewer();
 
             gtsam::Pose3 GetCameraPose(const gtsam::Vector& jointAngles);
-            gtsam::Pose3 GetCameraPose(const gtsam::Vector& jointAngles, const gtsam::Pose3& extr);
+            gtsam::Pose3 GetCameraPose(const gtsam::Vector& jointAngles, const gtsam::Pose3& extr, const RobotCalibration& kinCalib);
             gtsam::Pose3 GetCurrentExtrinsic();
+            gtsam::RobotCalibration GetCurrentKinematicCalibration();
             std::shared_ptr<joint_state_recorder::JointStateRecorder> GetJointRecodrer() { return jointRecorder; }
             gtsam::Vector GetRecordedJointAngles(const ros::Time& time);
             gtsam::Vector GetSimRecordedJointAngles(const ros::Time& time);
@@ -201,12 +207,19 @@ namespace gtsam
 
             inline gtsam::Cal3_S2 GetIntrinsic() { return *calib; }
 
-            void ShowReprojectionError(gtsam::RobotProjectionFactor<Cal3_S2>& projectionFactor, const gtsam::Vector& q, const gtsam::Point3& landmark, const gtsam::Pose3& pose, size_t index, cv::Mat& img);
+            void ShowReprojectionError(gtsam::RobotProjectionFactor<Cal3_S2>& projectionFactor,
+                    const gtsam::Vector& q,
+                    const gtsam::Point3& landmark,
+                    const gtsam::Pose3& pose,
+                    const RobotCalibration& kinematicCalibration,
+                    size_t index, cv::Mat& img);
             void ShowReprojectionErrors();
             void SaveGraph();
 
             void AddFactor(const gtsam::NonlinearFactor::shared_ptr& factor);
             void AddValue(const gtsam::Key& key, const gtsam::Value& value);
+
+            void CreateObservationFactor(const gtsam::Point2& observation, size_t config, size_t landmark);
 
             void AddLandmark(Landmark& landmark);
             void AddConfig(const gtsam::Vector& encoders, size_t idx);
@@ -229,6 +242,7 @@ namespace gtsam
             void PrintSimErrors(const std::string& dir, const std::string& postfix);
 
             inline gtsam::Pose3 GetSimExtrinsic() { return simExtrinsic; }
+            inline gtsam::RobotCalibration GetSimKinematicCalibration() { return simKincalibration; }
 
             Eigen::aligned_vector<gtsam::Vector>& GetSimTrajectory() { return simTrajectory; }
 
@@ -241,6 +255,14 @@ namespace gtsam
 
 
             inline const Params& GetParams() const { return params; }
+
+            inline gtsam::Key ExtrinsicSymbol() const { return Symbol('K', 0); }
+            inline gtsam::Key KinematicSymbol() const { return Symbol('F', 0); }
+            inline gtsam::Key ConfigSymbol(const size_t i) { return Symbol('q', i); }
+            inline gtsam::Key LandmarkSymbol(const size_t i) { return Symbol('l', i); }
+
+
+            void SetupPriors();
 
             gtsam::Values initialEstimate;
             gtsam::Values currentEstimate;
@@ -271,8 +293,8 @@ namespace gtsam
             dart::dynamics::GroupPtr arm;
             dart::dynamics::GroupPtr estimateArm;
 
-            gtsam::Pose3 currentExtrinsicEstimate;
             gtsam::Pose3 simExtrinsic;
+            gtsam::RobotCalibration simKincalibration;
 
             std::vector<std::string> dofs;
             dart::dynamics::BodyNode* cameraBody;
@@ -286,9 +308,11 @@ namespace gtsam
             std::map<size_t, Landmark> landmarksObserved;
             gtsam::noiseModel::Diagonal::shared_ptr encoderNoise;
             gtsam::noiseModel::Diagonal::shared_ptr calibrationPrior;
+            gtsam::noiseModel::Diagonal::shared_ptr kinematicsPrior;
             gtsam::noiseModel::Diagonal::shared_ptr driftNoise;
             gtsam::noiseModel::Robust::shared_ptr measurementNoise;
             gtsam::noiseModel::Robust::shared_ptr landmarkPrior;
+
             gtsam::noiseModel::mEstimator::Cauchy::shared_ptr cauchyEstimator;
             Cal3_S2::shared_ptr calib;
             Params params;

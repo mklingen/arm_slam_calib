@@ -204,7 +204,6 @@ namespace gtsam
         numObservationsThisIter = 0;
         encoders = Eigen::aligned_vector<gtsam::Vector>();
         trajectory = Eigen::aligned_vector<gtsam::Vector>();
-
         if (params.optimizationMode == ISAM)
         {
             ISAM2Params isamParams;
@@ -279,15 +278,18 @@ namespace gtsam
             aikido::rviz::SkeletonMarkerPtr marker = viewer->addSkeleton(estimateSkeleton);
             marker->SetColor(Eigen::Vector4d(0.5, 1.0, 0.5, 0.5));
         }
+
+        simKincalibration = RobotCalibration::Identity(arm);
+        params.kinematicsInitialGuess = simKincalibration;
     }
 
     void ArmSlamCalib::SimulationStep(size_t iter)
     {
         Vector q = trajectory[iter];
         Vector enc = encoders[iter];
-        AddValue(Symbol('q', iter), RobotConfig(enc, arm));
-        groundTruth.insert(Symbol('q', iter), RobotConfig(q, arm));
-        AddFactor(boost::make_shared<EncoderFactor>(Symbol('q', iter), enc, encoderNoise, params.useDeadBand, params.deadBandSize));
+        AddValue(ConfigSymbol(iter), RobotConfig(enc, arm));
+        groundTruth.insert(ConfigSymbol(iter), RobotConfig(q, arm));
+        AddFactor(boost::make_shared<EncoderFactor>(ConfigSymbol(iter), enc, encoderNoise, params.useDeadBand, params.deadBandSize));
         //SimulateObservations(iter);
         SimulateObservationsTriangulate(iter);
     }
@@ -411,7 +413,7 @@ namespace gtsam
 
                         if (params.computeExtrinsicMarginals)
                         {
-                            extrinsicMarginals = isam2.marginalCovariance(Symbol('K', 0));
+                            extrinsicMarginals = isam2.marginalCovariance(ExtrinsicSymbol());
                         }
 
                         /*
@@ -436,6 +438,29 @@ namespace gtsam
                     {
                         const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter;
                         ROS_ERROR("Indeterminate: %s", keyFormatter(e.nearbyVariable()).c_str());
+
+                        ROS_INFO("Writing jacobians...");
+                        auto linearization = graph->linearize(currentEstimate);
+                        gtsam::Matrix denseJacobian = linearization->jacobian().first;
+                        std::ofstream filestream2;
+                        filestream2.open("./dense_jacobian.txt", std::ios::out);
+                        for (size_t r = 0; r < denseJacobian.rows(); r++)
+                        {
+                            for (size_t c = 0; c < denseJacobian.cols(); c++)
+                            {
+                                filestream2 << denseJacobian(r, c);
+
+                                if (c < denseJacobian.cols() - 1)
+                                {
+                                    filestream2 << " ";
+                                }
+                            }
+
+                            filestream2 << std::endl;
+                        }
+                        ROS_INFO("Wrote jacobians");
+                        filestream2.close();
+                        exit(-1);
                     }
                     break;
                 }
@@ -444,9 +469,9 @@ namespace gtsam
             for (auto it = landmarksObserved.begin(); it != landmarksObserved.end(); it++)
             {
                 Landmark& lmk = it->second;
-                if (currentEstimate.find(Symbol('l', it->first)) != currentEstimate.end())
+                if (currentEstimate.find(LandmarkSymbol(it->first)) != currentEstimate.end())
                 {
-                    lmk.position = currentEstimate.at<gtsam::Point3>(Symbol('l', it->first));
+                    lmk.position = currentEstimate.at<gtsam::Point3>(LandmarkSymbol(it->first));
                 }
             }
             Timer::Tock("Optimize");
@@ -566,20 +591,14 @@ namespace gtsam
         trajectory = Eigen::aligned_vector<gtsam::Vector>(params.trajectorySize, gtsam::Vector::Zero(dofs.size()));
         encoders = Eigen::aligned_vector<gtsam::Vector>(params.trajectorySize, gtsam::Vector::Zero(dofs.size()));
 
-        calibrationPrior = noiseModel::Diagonal::Sigmas((Vector(6) << Vector3::Constant(params.extrinsicNoiseLevel), Vector3::Constant(params.extrinsicRotNoiseLevel)));
-        AddFactor(boost::make_shared<PriorFactor<Pose3> >(Symbol('K', 0), Pose3::identity(), calibrationPrior));
+        SetupPriors();
 
-        //Pose3 calibInit =Pose3(Rot3::RzRyRx(Rand(params.extrinsicRotNoiseLevel), Rand(params.extrinsicRotNoiseLevel), Rand(params.extrinsicRotNoiseLevel)), gtsam::Point3(Rand(params.extrinsicNoiseLevel), Rand(params.extrinsicNoiseLevel), Rand(params.extrinsicNoiseLevel)));
-        Pose3 calibInit = Pose3::identity();
-        AddValue(Symbol('K', 0), calibInit);
-        //groundTruth.insert(Symbol('K', 0), Pose3::identity());
+        //groundTruth.insert(ExtrinsicSymbol(), Pose3::identity());
         LoadSimTrajectory("/home/mklingen/prdev/src/arm_slam_calib/data/traj.txt");
 
         trajectory = simTrajectory;
         encoders = simEncoders;
 
-        measurementNoise = noiseModel::Robust::Create(cauchyEstimator, noiseModel::Diagonal::Sigmas(Vector2::Constant(params.projectionNoiseLevel)));
-        landmarkPrior = noiseModel::Robust::Create(cauchyEstimator, noiseModel::Diagonal::Sigmas(Vector3::Constant(params.landmarkNoiseLevel)));
     }
 
     void ArmSlamCalib::SetTrajectory(const Eigen::aligned_vector<gtsam::Vector>& trajectory_)
@@ -626,7 +645,7 @@ namespace gtsam
             t = encoders.size() - 1;
         }
 
-        Symbol q_t = Symbol('q', t);
+        Symbol q_t = ConfigSymbol(t);
 
         if (currentEstimate.find(q_t) != currentEstimate.end() && initialEstimate.find(q_t) != initialEstimate.end())
         {
@@ -640,7 +659,8 @@ namespace gtsam
 
     }
 
-    void ArmSlamCalib::ShowReprojectionError(gtsam::RobotProjectionFactor<Cal3_S2>& projectionFactor, const gtsam::Vector& q, const gtsam::Point3& landmark, const gtsam::Pose3& pose, size_t landmarkId, cv::Mat& imgIn)
+    void ArmSlamCalib::ShowReprojectionError(gtsam::RobotProjectionFactor<Cal3_S2>& projectionFactor, const gtsam::Vector& q, const gtsam::Point3& landmark, const gtsam::Pose3& pose,
+            const RobotCalibration& kinematicCalibration, size_t landmarkId, cv::Mat& imgIn)
     {
         cv::Point measurement;
         measurement.x = projectionFactor.getMeasurement().x();
@@ -649,7 +669,7 @@ namespace gtsam
         imgIn.copyTo(img);
         cv::circle(img, measurement, 10, cv::Scalar(255, 0, 0), 1);
         cv::Point projectionCv;
-        gtsam::Point2 projection = projectionFactor.project(q, landmark, pose);
+        gtsam::Point2 projection = projectionFactor.project(q, landmark, pose, kinematicCalibration);
         projectionCv.x = projection.x();
         projectionCv.y = projection.y();
         cv::circle(img, projectionCv, 5, cv::Scalar(0, 255, 255), 1);
@@ -728,7 +748,7 @@ namespace gtsam
         col1.a = a;
 
 
-        gtsam::Pose3 ext = state.at<gtsam::Pose3>(Symbol('K', 0));
+        gtsam::Pose3 ext = state.at<gtsam::Pose3>(ExtrinsicSymbol());
 
         if (drawLandmarks)
         {
@@ -744,9 +764,9 @@ namespace gtsam
             for(auto it = landmarksObserved.begin(); it != landmarksObserved.end(); it++)
             {
                 const Landmark& landmark = it->second;
-                if (state.find(Symbol('l', landmark.id)) != state.end())
+                if (state.find(LandmarkSymbol(landmark.id)) != state.end())
                 {
-                   Point3 estLandmark = state.at<gtsam::Point3>(Symbol('l', landmark.id));
+                   Point3 estLandmark = state.at<gtsam::Point3>(LandmarkSymbol(landmark.id));
                    geometry_msgs::Point p1;
                    p1.x = estLandmark.x();
                    p1.y = estLandmark.y();
@@ -784,11 +804,11 @@ namespace gtsam
 
             for (size_t t = 0; t < iter; t++)
             {
-                if (state.find(Symbol('q', t)) == state.end())
+                if (state.find(ConfigSymbol(t)) == state.end())
                 {
                     continue;
                 }
-               RobotConfig estQ = state.at<RobotConfig>(Symbol('q', t));
+               RobotConfig estQ = state.at<RobotConfig>(ConfigSymbol(t));
                arm->setPositions(estQ.getQ());
                Eigen::Isometry3d estPos = cameraBody->getWorldTransform() * Eigen::Isometry3d(ext.matrix()) ;
 
@@ -915,9 +935,9 @@ namespace gtsam
             for(auto it = landmarksObserved.begin(); it != landmarksObserved.end(); it++)
             {
                 const Landmark& landmark = it->second;
-                if (state.find(Symbol('l', landmark.id)) != state.end())
+                if (state.find(LandmarkSymbol(landmark.id)) != state.end())
                 {
-                   Point3 estLandmark = state.at<gtsam::Point3>(Symbol('l', landmark.id));
+                   Point3 estLandmark = state.at<gtsam::Point3>(LandmarkSymbol(landmark.id));
                    geometry_msgs::Point p1;
                    p1.x = estLandmark.x();
                    p1.y = estLandmark.y();
@@ -926,7 +946,7 @@ namespace gtsam
                    for (size_t j = 0; j < landmark.configs.size(); j++)
                    {
                        size_t t = landmark.configs.at(j);
-                       gtsam::Vector q = state.at<RobotConfig>(Symbol('q', t)).getQ();
+                       gtsam::Vector q = state.at<RobotConfig>(ConfigSymbol(t)).getQ();
                        arm->setPositions(q);
                        Eigen::Isometry3d estPos = cameraBody->getWorldTransform() * Eigen::Isometry3d(ext.matrix()) ;
 
@@ -957,11 +977,11 @@ namespace gtsam
 
             for (size_t t = 0; t < iter; t+=10)
             {
-                if (state.find(Symbol('q', t)) == state.end())
+                if (state.find(ConfigSymbol(t)) == state.end())
                 {
                     continue;
                 }
-               RobotConfig estQ = state.at<RobotConfig>(Symbol('q', t));
+               RobotConfig estQ = state.at<RobotConfig>(ConfigSymbol(t));
                gtsam::Pose3 estPose = GetCameraPose(estQ.getQ());
                pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud = pointClouds.at(t);
                pcl::PointCloud<pcl::PointXYZRGB> transformed;
@@ -979,11 +999,11 @@ namespace gtsam
     {
         if (encoders.size() == 0) return;
         size_t t = encoders.size() - 1;
-        if (currentEstimate.find(Symbol('q', t)) == currentEstimate.end() || !lastPointCloud.get())
+        if (currentEstimate.find(ConfigSymbol(t)) == currentEstimate.end() || !lastPointCloud.get())
         {
             return;
         }
-        RobotConfig estQ = currentEstimate.at<RobotConfig>(Symbol('q', t));
+        RobotConfig estQ = currentEstimate.at<RobotConfig>(ConfigSymbol(t));
         gtsam::Pose3 estPose = GetCameraPose(estQ.getQ());
         pcl::PointCloud<pcl::PointXYZRGB> transformed;
         pcl::transformPointCloud(*lastPointCloud, transformed, estPose.matrix());
@@ -1033,14 +1053,24 @@ namespace gtsam
         {
             ROS_ERROR("Unable to get camera calibration!");
         }
-        calibrationPrior = noiseModel::Diagonal::Sigmas((Vector(6) << Vector3::Constant(params.extrinsicNoiseLevel), Vector3::Constant(params.extrinsicRotNoiseLevel)));
-        AddFactor(boost::make_shared<PriorFactor<Pose3> >(Symbol('K', 0), params.extrinsicInitialGuess, calibrationPrior));
-        AddValue(Symbol('K', 0), params.extrinsicInitialGuess);
-        measurementNoise = noiseModel::Robust::Create(cauchyEstimator, noiseModel::Diagonal::Sigmas(Vector2::Constant(params.projectionNoiseLevel)));
-        landmarkPrior = noiseModel::Robust::Create(cauchyEstimator, noiseModel::Diagonal::Sigmas(Vector3::Constant(params.landmarkNoiseLevel)));
+
+        SetupPriors();
+
         ROS_INFO("Initialized");
     }
 
+
+    void ArmSlamCalib::SetupPriors()
+    {
+        calibrationPrior = noiseModel::Diagonal::Sigmas((Vector(6) << Vector3::Constant(params.extrinsicNoiseLevel), Vector3::Constant(params.extrinsicRotNoiseLevel)));
+        AddFactor(boost::make_shared<PriorFactor<Pose3> >(ExtrinsicSymbol(), params.extrinsicInitialGuess, calibrationPrior));
+        kinematicsPrior = noiseModel::Diagonal::Sigmas(Vector(arm->getNumDofs() * 6) << Vector3::Constant(params.kinematicNoise));
+        AddFactor(boost::make_shared<PriorFactor<RobotCalibration> >(KinematicSymbol(), params.kinematicsInitialGuess, kinematicsPrior));
+        AddValue(ExtrinsicSymbol(), params.extrinsicInitialGuess);
+        AddValue(KinematicSymbol(), params.kinematicsInitialGuess);
+        measurementNoise = noiseModel::Robust::Create(cauchyEstimator, noiseModel::Diagonal::Sigmas(Vector2::Constant(params.projectionNoiseLevel)));
+        landmarkPrior = noiseModel::Robust::Create(cauchyEstimator, noiseModel::Diagonal::Sigmas(Vector3::Constant(params.landmarkNoiseLevel)));
+    }
 
     void ArmSlamCalib::InitializeAprilTags(const std::string& imageTopic, const std::string& aprilTagsTopic)
     {
@@ -1067,12 +1097,9 @@ namespace gtsam
              exit(-1);
          }
          ROS_INFO("%f %f %f %f\n", calib->fx(), calib->fy(), calib->px(), calib->py());
-         calibrationPrior = noiseModel::Diagonal::Sigmas((Vector(6) << Vector3::Constant(params.extrinsicNoiseLevel), Vector3::Constant(params.extrinsicRotNoiseLevel)));
-         AddFactor(boost::make_shared<PriorFactor<Pose3> >(Symbol('K', 0), params.extrinsicInitialGuess, calibrationPrior));
-         AddValue(Symbol('K', 0), params.extrinsicInitialGuess);
-         groundTruth.insert(Symbol('K', 0), params.extrinsicInitialGuess);
-         measurementNoise = noiseModel::Robust::Create(cauchyEstimator, noiseModel::Diagonal::Sigmas(Vector2::Constant(params.projectionNoiseLevel)));
-         landmarkPrior = noiseModel::Robust::Create(cauchyEstimator, noiseModel::Diagonal::Sigmas(Vector3::Constant(params.landmarkNoiseLevel)));
+
+         SetupPriors();
+
          ROS_INFO("Initialized");
     }
 
@@ -1099,11 +1126,9 @@ namespace gtsam
         {
             ROS_ERROR("Unable to get camera calibration!");
         }
-        calibrationPrior = noiseModel::Diagonal::Sigmas((Vector(6) << Vector3::Constant(params.extrinsicNoiseLevel), Vector3::Constant(params.extrinsicRotNoiseLevel)));
-        AddFactor(boost::make_shared<PriorFactor<Pose3> >(Symbol('K', 0), params.extrinsicInitialGuess, calibrationPrior));
-        AddValue(Symbol('K', 0), params.extrinsicInitialGuess);
-        measurementNoise = noiseModel::Robust::Create(cauchyEstimator, noiseModel::Diagonal::Sigmas(Vector2::Constant(params.projectionNoiseLevel)));
-        landmarkPrior = noiseModel::Robust::Create(cauchyEstimator, noiseModel::Diagonal::Sigmas(Vector3::Constant(params.landmarkNoiseLevel)));
+
+        SetupPriors();
+
         ROS_INFO("Initialized");
     }
 
@@ -1263,10 +1288,10 @@ namespace gtsam
         for(auto it = landmarksObserved.begin(); it != landmarksObserved.end(); it++)
         {
            const Landmark& landmark = it->second;
-           if (groundTruth.find(Symbol('l', landmark.id)) != groundTruth.end() && current.find(Symbol('l', landmark.id)) != current.end())
+           if (groundTruth.find(LandmarkSymbol(landmark.id)) != groundTruth.end() && current.find(LandmarkSymbol(landmark.id)) != current.end())
            {
-               Point3 trueLandmark = groundTruth.at<gtsam::Point3>(Symbol('l', landmark.id));
-               Point3 currentLandmark = current.at<gtsam::Point3>(Symbol('l', landmark.id));
+               Point3 trueLandmark = groundTruth.at<gtsam::Point3>(LandmarkSymbol(landmark.id));
+               Point3 currentLandmark = current.at<gtsam::Point3>(LandmarkSymbol(landmark.id));
                error.landmarkError += (trueLandmark - currentLandmark).norm();
                measurements++;
            }
@@ -1281,10 +1306,10 @@ namespace gtsam
 
         for (size_t i = 0; i < trajectory.size(); i++)
         {
-            if (groundTruth.find(Symbol('q', i)) != groundTruth.end() && current.find(Symbol('q', i)) != current.end())
+            if (groundTruth.find(ConfigSymbol(i)) != groundTruth.end() && current.find(ConfigSymbol(i)) != current.end())
             {
-                RobotConfig truePos = groundTruth.at<gtsam::RobotConfig>(Symbol('q', i));
-                RobotConfig currentPos = current.at<gtsam::RobotConfig>(Symbol('q', i));
+                RobotConfig truePos = groundTruth.at<gtsam::RobotConfig>(ConfigSymbol(i));
+                RobotConfig currentPos = current.at<gtsam::RobotConfig>(ConfigSymbol(i));
                 error.jointAngleError += (truePos.getQ() - currentPos.getQ()).norm();
                 configs++;
             }
@@ -1295,10 +1320,10 @@ namespace gtsam
             error.jointAngleError /= configs;
         }
 
-        if (groundTruth.find(Symbol('K', 0)) != groundTruth.end() && current.find(Symbol('K', 0)) != current.end())
+        if (groundTruth.find(ExtrinsicSymbol()) != groundTruth.end() && current.find(ExtrinsicSymbol()) != current.end())
         {
-            Pose3 trueExt = groundTruth.at<gtsam::Pose3>(Symbol('K', 0));
-            Pose3 currentExt = current.at<gtsam::Pose3>(Symbol('K', 0));
+            Pose3 trueExt = groundTruth.at<gtsam::Pose3>(ExtrinsicSymbol());
+            Pose3 currentExt = current.at<gtsam::Pose3>(ExtrinsicSymbol());
             error.extrinsicError = (trueExt.translation() - currentExt.translation()).norm();
         }
 
@@ -1318,13 +1343,13 @@ namespace gtsam
             try
             {
                 gtsam::Point3 pt;
-                if (currentEstimate.find(Symbol('l', landmark.id)) == currentEstimate.end())
+                if (currentEstimate.find(LandmarkSymbol(landmark.id)) == currentEstimate.end())
                 {
                     pt = landmark.position;
                 }
                 else
                 {
-                    pt = currentEstimate.at<gtsam::Point3>(Symbol('l', landmark.id));
+                    pt = currentEstimate.at<gtsam::Point3>(LandmarkSymbol(landmark.id));
                 }
                 std::pair<gtsam::Point2, bool> proj = camera.projectSafe(pt);
                 const gtsam::Point2& uv = proj.first;
@@ -1368,9 +1393,9 @@ namespace gtsam
                 gtsam::Vector q_gt = GetSimRecordedJointAngles(stamp);
                 trajectory.push_back(q_gt);
 
-                if (groundTruth.find(Symbol('q', timeIndex)) != groundTruth.end())
-                    groundTruth.erase(Symbol('q', timeIndex));
-                groundTruth.insert(Symbol('q', timeIndex), RobotConfig(q_gt, arm));
+                if (groundTruth.find(ConfigSymbol(timeIndex)) != groundTruth.end())
+                    groundTruth.erase(ConfigSymbol(timeIndex));
+                groundTruth.insert(ConfigSymbol(timeIndex), RobotConfig(q_gt, arm));
             }
 
             AddConfig(q, timeIndex);
@@ -1459,10 +1484,7 @@ namespace gtsam
                 }
                 else if (matchedLandmark.isInGraph)
                 {
-                    AddFactor(boost::make_shared<RobotProjectionFactor<Cal3_S2> >(
-                            newLandmarks.at(w).observations.at(0), measurementNoise,
-                            Symbol('q', timeIndex), Symbol('l', i), Symbol('K', 0),
-                            arm,  cameraBody,  robotMutex.get(), calib, timeIndex, i, false, true));
+                    CreateObservationFactor(newLandmarks.at(w).observations.at(0), timeIndex, i);
                 }
                 if (matchedLandmark.observations.size() > 1)
                     numObservationsThisIter++;
@@ -1480,11 +1502,11 @@ namespace gtsam
 
         Timer::Tick("Ransac/Triangulate");
         if (params.runRansac && frontEnd->GetMode() == FrontEnd::Mode_Features && encoders.size() > 1
-                && currentEstimate.find(Symbol('q', timeIndex)) != currentEstimate.end())
+                && currentEstimate.find(ConfigSymbol(timeIndex)) != currentEstimate.end())
         {
             for (int b = 0; b < (int)(timeIndex) - 1; b++)
             {
-                if (currentEstimate.find(Symbol('q', b)) != currentEstimate.end())
+                if (currentEstimate.find(ConfigSymbol(b)) != currentEstimate.end())
                     RunRansac(timeIndex - 1, b);
             }
         }
@@ -1498,56 +1520,57 @@ namespace gtsam
         size_t i = landmark.id;
         landmark.isNew = false;
         landmark.isInGraph = true;
-        if (currentEstimate.find(Symbol('l', i)) != currentEstimate.end())
-            currentEstimate.erase(Symbol('l', i));
-        if (initialEstimate.find(Symbol('l', i)) != initialEstimate.end())
-            initialEstimate.erase(Symbol('l', i));
-        AddValue(Symbol('l', i), landmark.position);
-        if (groundTruth.find(Symbol('l', i)) != groundTruth.end())
-            groundTruth.erase(Symbol('l', i));
-        groundTruth.insert(Symbol('l', i), landmark.position);
-        AddFactor(boost::make_shared<gtsam::PriorFactor<Point3> >(Symbol('l', i), landmark.position, landmarkPrior));
+        if (currentEstimate.find(LandmarkSymbol(i)) != currentEstimate.end())
+            currentEstimate.erase(LandmarkSymbol(i));
+        if (initialEstimate.find(LandmarkSymbol(i)) != initialEstimate.end())
+            initialEstimate.erase(LandmarkSymbol(i));
+        AddValue(LandmarkSymbol(i), landmark.position);
+        if (groundTruth.find(LandmarkSymbol(i)) != groundTruth.end())
+            groundTruth.erase(LandmarkSymbol(i));
+        groundTruth.insert(LandmarkSymbol(i), landmark.position);
+        AddFactor(boost::make_shared<gtsam::PriorFactor<Point3> >(LandmarkSymbol(i), landmark.position, landmarkPrior));
         for (size_t k = 0; k < landmark.observations.size(); k++)
         {
-            AddFactor(boost::make_shared<RobotProjectionFactor<Cal3_S2> >(
-                    landmark.observations.at(k), measurementNoise,
-                    Symbol('q', landmark.configs.at(k)), Symbol('l', i), Symbol('K', 0),
-                    arm,  cameraBody,  robotMutex.get(), calib, landmark.configs.at(k), i, false, true));
+            CreateObservationFactor(landmark.observations.at(k), landmark.configs.at(k), i);
         }
     }
 
     void ArmSlamCalib::AddConfig(const gtsam::Vector& encQ, size_t i)
     {
-        if (initialEstimate.find(Symbol('q', i)) == initialEstimate.end())
+        if (initialEstimate.find(ConfigSymbol(i)) == initialEstimate.end())
         {
-            AddValue(Symbol('q', i), RobotConfig(encQ, arm));
-            AddFactor(boost::make_shared<EncoderFactor>(Symbol('q', i), encQ, encoderNoise, params.useDeadBand, params.deadBandSize));
+            AddValue(ConfigSymbol(i), RobotConfig(encQ, arm));
+            AddFactor(boost::make_shared<EncoderFactor>(ConfigSymbol(i), encQ, encoderNoise, params.useDeadBand, params.deadBandSize));
 
             if (params.addDriftNoise && i > 0)
             {
-                AddFactor(boost::make_shared<DriftFactor>(Symbol('q', i - 1), Symbol('q', i), encoders.at(i - 1), encoders.at(i), driftNoise));
+                AddFactor(boost::make_shared<DriftFactor>(ConfigSymbol(i - 1), ConfigSymbol(i), encoders.at(i - 1), encoders.at(i), driftNoise));
             }
         }
     }
 
-    gtsam::Pose3 ArmSlamCalib::GetCameraPose(const gtsam::Vector& jointAngles, const gtsam::Pose3& extr)
+    gtsam::Pose3 ArmSlamCalib::GetCameraPose(const gtsam::Vector& jointAngles, const gtsam::Pose3& extr, const RobotCalibration& kinCalib)
     {
-        gtsam::Vector initQ = arm->getPositions();
-        arm->setPositions(jointAngles);
+        std::lock_guard<std::mutex> lock(*(robotMutex));
+        RobotModifier modifier(kinCalib, jointAngles);
         Eigen::Isometry3d linkPose = cameraBody->getWorldTransform();
         Eigen::Matrix4d mat = linkPose.matrix() * extr.matrix();
-        arm->setPositions(initQ);
         return gtsam::Pose3(mat);
     }
 
     gtsam::Pose3 ArmSlamCalib::GetCameraPose(const gtsam::Vector& jointAngles)
     {
-        return GetCameraPose(jointAngles, GetCurrentExtrinsic());
+        return GetCameraPose(jointAngles, GetCurrentExtrinsic(), GetCurrentKinematicCalibration());
+    }
+
+    RobotCalibration ArmSlamCalib::GetCurrentKinematicCalibration()
+    {
+        return currentEstimate.at<gtsam::RobotCalibration>(KinematicSymbol());
     }
 
     gtsam::Pose3 ArmSlamCalib::GetCurrentExtrinsic()
     {
-        return currentEstimate.at<gtsam::Pose3>(Symbol('K', 0));
+        return currentEstimate.at<gtsam::Pose3>(ExtrinsicSymbol());
     }
 
 
@@ -1571,18 +1594,16 @@ namespace gtsam
                         landmarksObserved[l]  = Landmark();
                         landmarksObserved[l].id = l;
                         gtsam::Point3 ptCorrupt = estCamera.backproject(uv.first, 1.0f);
-                        AddValue(Symbol('l', l), ptCorrupt);
-                        AddFactor(boost::make_shared<gtsam::PriorFactor<Point3> >(Symbol('l', l), ptCorrupt, landmarkPrior));
-                        groundTruth.insert(Symbol('l', l), simLandmarks.at(l));
+                        AddValue(LandmarkSymbol(l), ptCorrupt);
+                        AddFactor(boost::make_shared<gtsam::PriorFactor<Point3> >(LandmarkSymbol(l), ptCorrupt, landmarkPrior));
+                        groundTruth.insert(LandmarkSymbol(l), simLandmarks.at(l));
                     }
 
                     Landmark& observation = landmarksObserved[l];
                     observation.configs.push_back(t);
                     observation.observations.push_back(uv.first);
 
-                    AddFactor(boost::make_shared<RobotProjectionFactor<Cal3_S2> >(uv.first, measurementNoise,
-                            Symbol('q', t), Symbol('l', l), Symbol('K', 0),
-                            arm, cameraBody,  robotMutex.get(), calib, t, l, false, true));
+                    CreateObservationFactor(uv.first, t, l);
 
                     if (observation.observations.size()  >= 2)
                     {
@@ -1595,6 +1616,13 @@ namespace gtsam
                 continue;
             }
         }
+    }
+
+    void ArmSlamCalib::CreateObservationFactor(const gtsam::Point2& observation, size_t config, size_t landmark)
+    {
+        AddFactor(boost::make_shared<RobotProjectionFactor<Cal3_S2> >(observation, measurementNoise,
+                ConfigSymbol(config), LandmarkSymbol(landmark), ExtrinsicSymbol(), KinematicSymbol(),
+                arm, cameraBody,  robotMutex.get(), calib, config, landmark, false, true));
     }
 
     bool ArmSlamCalib::GetNewLandmarksSimulated(size_t t, const std::vector<Landmark>& visibleLandmarks, std::vector<Landmark>& newLandmarks)
@@ -1615,7 +1643,7 @@ namespace gtsam
 
                     if (landmarksObserved.find(l) == landmarksObserved.end())
                     {
-                        groundTruth.insert(Symbol('l', l), simLandmarks.at(l));
+                        groundTruth.insert(LandmarkSymbol(l), simLandmarks.at(l));
                     }
 
                     Landmark newLandmark;
@@ -1688,27 +1716,21 @@ namespace gtsam
                 size_t i = matchedLandmark.id;
                 matchedLandmark.isNew = false;
                 matchedLandmark.isInGraph = true;
-                if (currentEstimate.find(Symbol('l', i)) != currentEstimate.end())
-                    currentEstimate.erase(Symbol('l', i));
-                if (initialEstimate.find(Symbol('l', i)) != initialEstimate.end())
-                    initialEstimate.erase(Symbol('l', i));
-                AddValue(Symbol('l', i), matchedLandmark.position);
+                if (currentEstimate.find(LandmarkSymbol(i)) != currentEstimate.end())
+                    currentEstimate.erase(LandmarkSymbol(i));
+                if (initialEstimate.find(LandmarkSymbol(i)) != initialEstimate.end())
+                    initialEstimate.erase(LandmarkSymbol(i));
+                AddValue(LandmarkSymbol(i), matchedLandmark.position);
 
-                AddFactor(boost::make_shared<gtsam::PriorFactor<Point3> >(Symbol('l', i), matchedLandmark.position, landmarkPrior));
+                AddFactor(boost::make_shared<gtsam::PriorFactor<Point3> >(LandmarkSymbol(i), matchedLandmark.position, landmarkPrior));
                 for (size_t k = 0; k < matchedLandmark.observations.size(); k++)
                 {
-                    AddFactor(boost::make_shared<RobotProjectionFactor<Cal3_S2> >(
-                            matchedLandmark.observations.at(k), measurementNoise,
-                            Symbol('q', matchedLandmark.configs.at(k)), Symbol('l', i), Symbol('K', 0),
-                            arm,  cameraBody,  robotMutex.get(), calib, matchedLandmark.configs.at(k), i, false, true));
+                    CreateObservationFactor(matchedLandmark.observations.at(k), matchedLandmark.configs.at(k), i);
                 }
             }
             else if (matchedLandmark.isInGraph)
             {
-                AddFactor(boost::make_shared<RobotProjectionFactor<Cal3_S2> >(
-                        newLandmarks.at(w).observations.at(0), measurementNoise,
-                        Symbol('q', timeIndex), Symbol('l', i), Symbol('K', 0),
-                        arm,  cameraBody,  robotMutex.get(), calib, timeIndex, i, false, true));
+                CreateObservationFactor(newLandmarks.at(w).observations.at(0), timeIndex, i);
             }
 
             if (matchedLandmark.observations.size() > 3)
@@ -1729,10 +1751,11 @@ namespace gtsam
             {
                 size_t trajIndex = projection->getTrajIndex();
                 size_t landmarkIndex = projection->getLandmarkIndex();
-                gtsam::Vector q = currentEstimate.at<gtsam::RobotConfig>(Symbol('q', trajIndex)).getQ();
-                gtsam::Point3 l = currentEstimate.at<gtsam::Point3>(Symbol('l', landmarkIndex));
-                gtsam::Pose3 ext = currentEstimate.at<gtsam::Pose3>(Symbol('K', 0));
-                ShowReprojectionError(*projection,  q, l, ext,landmarkIndex,  images[trajIndex]);
+                gtsam::Vector q = currentEstimate.at<gtsam::RobotConfig>(ConfigSymbol(trajIndex)).getQ();
+                gtsam::Point3 l = currentEstimate.at<gtsam::Point3>(LandmarkSymbol(landmarkIndex));
+                gtsam::Pose3 ext = currentEstimate.at<gtsam::Pose3>(ExtrinsicSymbol());
+                gtsam::RobotCalibration kincalib = currentEstimate.at<gtsam::RobotCalibration>(KinematicSymbol());
+                ShowReprojectionError(*projection,  q, l, ext, kincalib, landmarkIndex,  images[trajIndex]);
 
             }
         }
@@ -1775,8 +1798,8 @@ namespace gtsam
 
     void ArmSlamCalib::RunRansac(size_t timeA, size_t timeB)
     {
-        gtsam::Vector qA = currentEstimate.at<gtsam::RobotConfig>(Symbol('q', timeA)).getQ();
-        gtsam::Vector qB = currentEstimate.at<gtsam::RobotConfig>(Symbol('q', timeB)).getQ();
+        gtsam::Vector qA = currentEstimate.at<gtsam::RobotConfig>(ConfigSymbol(timeA)).getQ();
+        gtsam::Vector qB = currentEstimate.at<gtsam::RobotConfig>(ConfigSymbol(timeB)).getQ();
         gtsam::Pose3 poseA = GetCameraPose(qA);
         gtsam::Pose3 poseB = GetCameraPose(qB);
         std::vector<Landmark> landmarks;
@@ -1902,9 +1925,10 @@ namespace gtsam
 
             if (projFactor)
             {
-                double err = projFactor->evaluateError(currentEstimate.at<RobotConfig>(Symbol('q', projFactor->getTrajIndex())),
-                                                       currentEstimate.at<gtsam::Point3>(Symbol('l', projFactor->getLandmarkIndex())),
-                                                       currentEstimate.at<gtsam::Pose3>(Symbol('K', 0))).norm();
+                double err = projFactor->evaluateError(currentEstimate.at<RobotConfig>(ConfigSymbol(projFactor->getTrajIndex())),
+                                                       currentEstimate.at<gtsam::Point3>(LandmarkSymbol(projFactor->getLandmarkIndex())),
+                                                       currentEstimate.at<gtsam::Pose3>(ExtrinsicSymbol()),
+                                                       currentEstimate.at<RobotCalibration>(KinematicSymbol())).norm();
                 errors.push_back(err);
             }
         }
@@ -1916,8 +1940,8 @@ namespace gtsam
         if (params.drawEstimateRobot && encoders.size() > 0)
         {
             size_t idx = encoders.size() - 1;
-            if (currentEstimate.find(Symbol('q', idx)) != currentEstimate.end())
-                estimateArm->setPositions(currentEstimate.at<gtsam::RobotConfig>(Symbol('q', idx)).getQ());
+            if (currentEstimate.find(ConfigSymbol(idx)) != currentEstimate.end())
+                estimateArm->setPositions(currentEstimate.at<gtsam::RobotConfig>(ConfigSymbol(idx)).getQ());
         }
 
         viewer->update();
@@ -1979,7 +2003,7 @@ namespace gtsam
                 //simEncoders.push_back(Wrap(q + gtsam::Vector::Ones(arm->getNumDofs()) * 0.025));
             }
         }
-        groundTruth.insert(Symbol('K', 0), simExtrinsic);
+        groundTruth.insert(ExtrinsicSymbol(), simExtrinsic);
         params.trajectorySize = simTrajectory.size();
         simJointPublisher = nh.advertise<sensor_msgs::JointState>("/sim_joints", 10);
         simJointPublisher_groundtruth = nh.advertise<sensor_msgs::JointState>("/sim_joints_groundtruth", 10);
@@ -1996,7 +2020,7 @@ namespace gtsam
             return;
         }
 
-        Key key = Symbol('l', id);
+        Key key = LandmarkSymbol(id);
 
         for(auto it = graph->begin(); it != graph->end(); it++)
         {
@@ -2056,7 +2080,7 @@ namespace gtsam
         std::ofstream outFilePosition(dir + std::string("/position_error") + postfix + std::string(".txt"), std::ios::out | std::ios::trunc);
         std::ofstream outFileKinematics(dir + std::string("/kinematic_error") + postfix + std::string(".txt"), std::ios::out | std::ios::trunc);
 
-        gtsam::Pose3 extCur = currentEstimate.at<gtsam::Pose3>(Symbol('K', 0));
+        gtsam::Pose3 extCur = currentEstimate.at<gtsam::Pose3>(ExtrinsicSymbol());
         gtsam::Quaternion extCurQ = extCur.rotation().toQuaternion();
         gtsam::Quaternion simExtQ = extCur.rotation().toQuaternion();
         outFileExtrinsic << simExtrinsic.translation().x() << " "
@@ -2080,9 +2104,9 @@ namespace gtsam
             gtsam::Vector gt = trajectory.at(i);
             gtsam::Vector enc = encoders.at(i);
 
-            if (currentEstimate.find(Symbol('q', i)) != currentEstimate.end())
+            if (currentEstimate.find(ConfigSymbol(i)) != currentEstimate.end())
             {
-                RobotConfig qi = currentEstimate.at<RobotConfig>(Symbol('q', i));
+                RobotConfig qi = currentEstimate.at<RobotConfig>(ConfigSymbol(i));
                 gtsam::Vector qi_q = qi.getQ();
 
                 for (size_t j = 0; j < arm->getNumDofs(); j++)
@@ -2109,11 +2133,11 @@ namespace gtsam
                 outFileJoints << std::endl;
 
 
-                gtsam::Pose3 poseGT = GetCameraPose(gt, simExtrinsic);
+                gtsam::Pose3 poseGT = GetCameraPose(gt, simExtrinsic, simKincalibration);
                 gtsam::Pose3 poseI = GetCameraPose(qi_q);
-                gtsam::Pose3 pose_kinematics_gt = GetCameraPose(gt, simExtrinsic);
-                gtsam::Pose3 pose_kinematics_i = GetCameraPose(qi_q, simExtrinsic);
-                gtsam::Pose3 pose_kinematics_enc = GetCameraPose(enc, simExtrinsic);
+                gtsam::Pose3 pose_kinematics_gt = GetCameraPose(gt, simExtrinsic, simKincalibration);
+                gtsam::Pose3 pose_kinematics_i = GetCameraPose(qi_q, simExtrinsic, simKincalibration);
+                gtsam::Pose3 pose_kinematics_enc = GetCameraPose(enc, simExtrinsic, simKincalibration);
 
                 outFilePosition << poseGT.translation().x() << " " << poseGT.translation().y() << " " << poseGT.translation().z() << " " <<
                                    poseI.translation().x() << " " << poseI.translation().y() << " " << poseI.translation().z() << std::endl;
@@ -2150,11 +2174,11 @@ namespace gtsam
         compositeCloud->width = 1;
         for (size_t t = 0; t < trajectory.size(); t++)
         {
-            if (currentEstimate.find(Symbol('q', t)) == currentEstimate.end())
+            if (currentEstimate.find(ConfigSymbol(t)) == currentEstimate.end())
             {
                 continue;
             }
-           RobotConfig estQ = currentEstimate.at<RobotConfig>(Symbol('q', t));
+           RobotConfig estQ = currentEstimate.at<RobotConfig>(ConfigSymbol(t));
            gtsam::Pose3 estPose = GetCameraPose(estQ.getQ());
            pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud = pointClouds.at(t);
            pcl::PointCloud<pcl::PointXYZRGB> transformed;
