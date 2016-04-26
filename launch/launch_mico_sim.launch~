@@ -1,11 +1,11 @@
 <launch>
     <node name="arm_slam_calib" pkg="arm_slam_calib" type="sim_image" output="screen">
      <param name="use_sim_time"                   value="false" />
-     <param name="encoder_noise_level"            value="0.15"/>
-     <param name ="extrinsic_noise_level"         value="0.01"/>
-     <param name="extrinsic_rot_noise_level"      value="0.01"/>
+     <param name="encoder_noise_level"            value="0.05"/>
+     <param name ="extrinsic_noise_level"         value="0.1"/>
+     <param name="extrinsic_rot_noise_level"      value="0.1"/>
      <param name="landmark_noise_level"           value="50.0"/>
-     <param name="projection_noise_level"         value="0.1"/>
+     <param name="projection_noise_level"         value="1.0"/>
      <param name="run_ransac"                     value="true"/>
      <param name="save_images"                    value="false"/>
      <param name="generate_stitched_point_clouds" value="true"/>
@@ -18,7 +18,7 @@
      <param name="max_min_y"                      value="0"/>
      <param name="max_max_x"                      value="99999"/>
      <param name="max_max_y"                      value="99999"/>
-     <param name="do_feature_matching"            value="true"/>
+     <param name="do_feature_matching"            value="false"/>
      <param name="hamming_threshold"              value="60"/>
      <param name="ratio_threshold"                value="1.25"/>
      <param name="draw_good_features"             value="true"/>
@@ -36,11 +36,11 @@
      <param name="depth_topic"                    value="/sim_image_depth/image_rect"/>
      <param name="depth_info"                     value="/sim_image_depth/camera_info"/>
      <param name="joint_state_topic"              value="/sim_joints"/>
-     <rosparam param="extrinsic_initial_guess_translation">[0.0, 0.0, 0.0]</rosparam>
-     <rosparam param="extrinsic_initial_guess_rotation">[0.0, 0.0, 0.0]</rosparam>
+     <rosparam param="extrinsic_initial_guess_translation">[0.05, 0.05, 0.05]</rosparam>
+     <rosparam param="extrinsic_initial_guess_rotation">[0.05, 0.05, 0.05]</rosparam>
      <param name="drift_noise"    value="0.005"/>
      <param name="use_drift_noise" value="false"/>
-     <param name="robust_cauchy_multiplier" value="1.0"/>
+     <param name="robust_cauchy_multiplier" value="3.0"/>
      <param name="draw_landmarks" value="true"/>
      <param name="draw_pointclouds" value="true"/>
      <param name="draw_extrinsic_marginal" value="false"/>

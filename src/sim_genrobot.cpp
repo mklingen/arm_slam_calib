@@ -47,65 +47,65 @@ int main(int argc, char** argv)
 {
     ros::init(argc, argv, "arm_calib_sim");
     ros::NodeHandle nh("~");
+    int num_dofs = 1;
+    nh.param("num_dofs", num_dofs, num_dofs);
+    std::string dataDir = "~/.ros/";
+    nh.param("data_dir", dataDir, dataDir);
+    std::string dataPostfix = "";
+    nh.param("data_postfix", dataPostfix, dataPostfix);
+
+    int seed = 0;
+
+    nh.param("seed", seed, seed);
+    srand(seed);
+
     gtsam::ArmSlamCalib::Params params;
-    params.simulated = true;
+    params.encoderNoiseLevel = 0.03;
     params.optimizationMode = gtsam::ArmSlamCalib::ISAM;
+    params.simulated = true;
+    params.InitializeNodehandleParams(nh);
+    gtsam::Pose3 gt_pose = gtsam::Pose3(gtsam::Rot3::rodriguez(0, 1.57, 0), gtsam::Point3(0, 0, 0));
+    params.extrinsicInitialGuess = gtsam::Pose3(gtsam::Rot3::rodriguez(0.05, 1.57, 0.05), gtsam::Point3(0.1, 0.1, 0.1));
+
     gtsam::ArmSlamCalib calib(nh, std::make_shared<std::mutex>(), params);
+    calib.SetSimExtrinsic(gt_pose);
 
     std::vector<std::string> joints;
-    joints.push_back("mico_joint_1");
-    joints.push_back("mico_joint_2");
-    joints.push_back("mico_joint_3");
-    joints.push_back("mico_joint_4");
-    joints.push_back("mico_joint_5");
-    joints.push_back("mico_joint_6");
-
-    std::string cameraName = "mico_end_effector";
-    calib.InitRobot("package://ada_description/robots/mico.urdf", joints, cameraName);
-    calib.CreateSimulation("/home/mklingen/prdev/src/arm_slam_calib/data/traj.txt");
-
-    dart::dynamics::SkeletonPtr genRobot = dart::RobotGenerator::GenerateRobot(20, 0.5, 0.7, 0.01, 0.1);
-
-    calib.GetViewer()->addSkeleton(genRobot);
-
-    ros::Rate hz(30);
-
-    for (size_t i = 0; i < 100; i++)
+    dart::dynamics::SkeletonPtr genSkeleton = dart::RobotGenerator::GenerateRobot(num_dofs, 0.5, 0.7, 0.01, 0.1);
+    for (size_t i = 0; i < genSkeleton->getNumDofs(); i++)
     {
-        hz.sleep();
-        calib.UpdateViewer();
-        ros::spinOnce();
+        joints.push_back(genSkeleton->getJoint(i)->getName());
     }
+    std::string cameraName = genSkeleton->getBodyNode(genSkeleton->getNumBodyNodes() - 1)->getName();
+    calib.InitRobot(genSkeleton, joints, cameraName);
+    calib.CreateSimulation("");
 
-    std::ofstream errorstream("error.txt");
+    ros::Rate hz(200);
+
+
+    std::ofstream errorstream(dataDir + std::string("/error") + dataPostfix + std::string(".txt"));
     size_t iters = calib.GetParams().trajectorySize;
     bool drawLandmark = true;
     bool drawObs = false;
-    bool drawCamera = false;
+    bool drawCamera = true;
     bool drawTraj = true;
 
-    std::ofstream offsetFile("offsets.txt", std::ios::out);
-    std::ofstream reprojectionFile("reproj_error.txt", std::ios::out);
-    std::ofstream extrinsicFile("extrinsic_errors.txt", std::ios::out);
+    std::ofstream offsetFile(dataDir + std::string("/offsets.txt") + dataPostfix + std::string(".txt"), std::ios::out);
+    std::ofstream reprojectionFile(dataDir + std::string("/reproj_error.txt") + dataPostfix + std::string(".txt"), std::ios::out);
+    std::ofstream extrinsicFile(dataDir + std::string("/extrinsic_errors.txt") + dataPostfix + std::string(".txt"), std::ios::out);
 
-    Eigen::VectorXd genPosition = Eigen::VectorXd::Zero(genRobot->getNumDofs());
     for(size_t i = 0; i < iters; i++)
     {
-        genRobot->setPositions(genPosition);
-        for (size_t k = 0; k < genRobot->getNumDofs(); k++)
-        {
-            genPosition(k) += utils::Rand(-0.01, 0.01);
-        }
-
         calib.SimulationStep(i);
-        if (i > 1)
+        calib.UpdateViewer();
+        if (i > 1 && i % 2 == 0)
         {
             calib.OptimizeStep();
         }
-        calib.DrawState(i, 0, calib.initialEstimate, 0.0f, 0.8f, 0.8f, 1.0f,  drawLandmark, drawTraj, drawObs, drawCamera);
+
+        //calib.DrawState(i, 0, calib.initialEstimate, 0.0f, 0.8f, 0.8f, 1.0f,  drawLandmark, drawTraj, drawObs, drawCamera);
         calib.DrawState(i, 1, calib.currentEstimate, 0.8f, 0.0f, 0.0f, 1.0f,  drawLandmark, drawTraj, drawObs, drawCamera);
         calib.DrawState(i, 2, calib.groundTruth, 0.0f, 0.8f, 0.0f, 1.0f,  drawLandmark, drawTraj, drawObs, drawCamera);
-        calib.UpdateViewer();
 
         gtsam::Vector err = calib.ComputeLatestJointAngleOffsets(i);
 
@@ -129,6 +129,17 @@ int main(int argc, char** argv)
 
         offsetFile << std::endl;
 
+        std::vector<double> errors;
+        calib.CalculateCurrentErrors(errors);
+
+        if (errors.size() > 3)
+        {
+            std::sort(errors.begin(), errors.end());
+            double median = errors.at(errors.size() / 2);
+            reprojectionFile << median << std::endl;
+            ROS_WARN("Median error: %f",  median);
+        }
+
 
         gtsam::Pose3 extCur = calib.currentEstimate.at<gtsam::Pose3>(gtsam::Symbol('K', 0));
         gtsam::Quaternion extCurQ = extCur.rotation().toQuaternion();
@@ -151,6 +162,8 @@ int main(int argc, char** argv)
         extrinsicFile << std::endl;
 
 
+
+
         hz.sleep();
         ros::spinOnce();
 
@@ -161,16 +174,6 @@ int main(int argc, char** argv)
     errorstream.close();
     extrinsicFile.close();
     offsetFile.close();
-    calib.PrintSimErrors(".", "");
-
-    while(ros::ok())
-    {
-        calib.DrawState(params.trajectorySize, 0, calib.initialEstimate, 0, 0.8, 0.8, 1.0, drawLandmark, drawTraj, drawObs, drawCamera);
-        calib.DrawState(params.trajectorySize, 1, calib.currentEstimate, 0.8, 0.0, 0.0, 1.0, drawLandmark, drawTraj, drawObs, drawCamera);
-        calib.DrawState(params.trajectorySize, 2, calib.groundTruth, 0.0, 0.8, 0.0, 1.0, drawLandmark, drawTraj, drawObs, drawCamera);
-        calib.UpdateViewer();
-        hz.sleep();
-        ros::spinOnce();
-    }
+    calib.PrintSimErrors(dataDir, dataPostfix);
 }
 

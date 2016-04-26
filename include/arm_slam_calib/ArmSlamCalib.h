@@ -77,8 +77,8 @@ namespace gtsam
                         cx(640 / 2),
                         cy(480 /2),
                         encoderNoiseLevel(0.1),
-                        extrinsicNoiseLevel(0.01),
-                        extrinsicRotNoiseLevel(0.01),
+                        extrinsicNoiseLevel(0.2),
+                        extrinsicRotNoiseLevel(0.2),
                         landmarkNoiseLevel(30.0),
                         driftNoise(0.05),
                         projectionNoiseLevel(1.0),
@@ -160,10 +160,11 @@ namespace gtsam
             void SimulateImageStep(size_t iter);
 
             void InitRobot(const std::string& urdf, const std::vector<std::string>& dofs, const std::string& cameraLink);
+            void InitRobot(dart::dynamics::SkeletonPtr skel, const std::vector<std::string>& dofs, const std::string& cameraLink);
             void SetTrajectory(const Eigen::aligned_vector<gtsam::Vector>& trajectory);
             void SetEncoders(const Eigen::aligned_vector<gtsam::Vector>& encoders);
             void SetLandmarks(const std::vector<gtsam::Point3>& landmarks);
-            void CreateSimulation();
+            void CreateSimulation(const std::string& trajFile);
             void Optimize();
             void DrawState(size_t iter, int id, const gtsam::Values& state, float r, float g, float b, float a,
                     bool drawLandmarks = true, bool drawTraj = true, bool drawObs = true, bool drawCamera = true, bool drawPointClouds = false, bool drawMarginalExt = false);
@@ -184,7 +185,7 @@ namespace gtsam
             void InitializeJointRecorder(const std::string& topic);
             bool RealFrontEndStep();
 
-            void GetVisibleLandmarks(const gtsam::Vector& q, std::vector<Landmark>& lms);
+            void GetVisibleLandmarks(const gtsam::Vector& q, std::vector<Landmark>& lms, const gtsam::Pose3& extrinsic);
 
             void UpdateViewer();
 
@@ -239,13 +240,16 @@ namespace gtsam
             gtsam::Vector Wrap(const gtsam::Vector& q);
             bool IsContinuous(size_t jointIndex);
 
+            inline const std::shared_ptr<aikido::rviz::InteractiveMarkerViewer>& GetViewer() { return viewer; }
 
             inline const Params& GetParams() const { return params; }
+
+            inline void SetSimExtrinsic(const gtsam::Pose3& pose_) { simExtrinsic = pose_; }
+            inline const gtsam::Pose3& GetSimExtrinsic() const { return simExtrinsic; }
 
             gtsam::Values initialEstimate;
             gtsam::Values currentEstimate;
             gtsam::Values groundTruth;
-
 
         protected:
             ros::NodeHandle nh;

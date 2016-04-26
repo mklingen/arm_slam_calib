@@ -19,6 +19,7 @@
 #include <gtsam/geometry/PinholeCamera.h>
 #include <thread>
 #include <arm_slam_calib/RobotProjectionFactor.h>
+#include <arm_slam_calib/RobotConfig.h>
 //#define SANITY_CHECK
 namespace gtsam
 {
@@ -212,6 +213,7 @@ namespace gtsam
                     if (J1) *J1 = zeros(2, robot->getNumDofs());
                     if (J2) *J2 = zeros(2, 3);
                     if (J3) *J3 = zeros(2, 6);
+                    robot->setPositions(init);
                     return  gtsam::Point2(1, 1) * 2.0 * K->fx();
                 }
 

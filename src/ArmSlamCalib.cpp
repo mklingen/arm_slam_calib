@@ -8,6 +8,7 @@
 #include <arm_slam_calib/Utils.h>
 #include <arm_slam_calib/ArmSlamCalib.h>
 #include <arm_slam_calib/RelativePoseAdapter.h>
+#include <arm_slam_calib/RobotConfig.h>
 #include <opengv/sac_problems/relative_pose/CentralRelativePoseSacProblem.hpp>
 #include <opengv/sac/Ransac.hpp>
 #include <gtsam/nonlinear/DoglegOptimizer.h>
@@ -188,7 +189,7 @@ namespace gtsam
 
 
     ArmSlamCalib::ArmSlamCalib(const ros::NodeHandle& nh_,  const std::shared_ptr<std::mutex>& robotMutex_, const ArmSlamCalib::Params& noiseParams_) :
-            nh(nh_), robotMutex(robotMutex_), cameraBody(0x0), params(noiseParams_), maxID(0), perlin(0), simExtrinsic(gtsam::Pose3::identity())
+            nh(nh_), robotMutex(robotMutex_), cameraBody(0x0), params(noiseParams_), maxID(0), perlin(nh.param("seed", 0)), simExtrinsic(gtsam::Pose3::identity())
     {
         //TriangulateUnitTest();
         //RansacUnitTest();
@@ -219,6 +220,56 @@ namespace gtsam
 
     }
 
+    void ArmSlamCalib::InitRobot(dart::dynamics::SkeletonPtr skel_, const std::vector<std::string>& dofs_, const std::string& cameraLink_)
+    {
+        dofs = dofs_;
+
+        for (size_t i = 0; i < dofs_.size(); i++)
+        {
+            std::cout << dofs_[i] << " ";
+        }
+        std::cout << std::endl;
+
+        skeleton = skel_;
+        world = std::make_shared<dart::simulation::World>();
+        world->addSkeleton(skeleton);
+        viewer = std::make_shared<aikido::rviz::InteractiveMarkerViewer>("dart_markers");
+
+        viewer->addSkeleton(skeleton);
+
+        std::vector<dart::dynamics::DegreeOfFreedom*> dofVec;
+
+        for (size_t i = 0; i < dofs.size(); i++)
+        {
+           dofVec.push_back(skeleton->getDof(dofs.at(i)));
+        }
+
+        cameraBody = skeleton->getBodyNode(cameraLink_);
+
+        arm = dart::dynamics::Group::create("arm", dofVec, false, true);
+
+        //dart::dynamics::SkeletonPtr box =  CreateBox("box", Eigen::Vector3d(1, 1, 0.01), Eigen::Vector3d(0, 0, -0.1), 1.0);
+        //world->addSkeleton(box);
+        //viewer->addSkeleton(box);
+
+        if (params.drawEstimateRobot)
+        {
+           estimateSkeleton = skeleton->clone();
+           estimateSkeleton->setName("estimate_ada");
+           std::vector<dart::dynamics::DegreeOfFreedom*> dofVec2;
+
+           for (size_t i = 0; i < dofs.size(); i++)
+           {
+               dofVec2.push_back(estimateSkeleton->getDof(dofs.at(i)));
+           }
+
+           estimateArm = dart::dynamics::Group::create("estimateArm", dofVec2, false, true);
+
+           aikido::rviz::SkeletonMarkerPtr marker = viewer->addSkeleton(estimateSkeleton);
+           marker->SetColor(Eigen::Vector4d(0.5, 1.0, 0.5, 0.5));
+        }
+    }
+
     void ArmSlamCalib::InitRobot(const std::string& urdf, const std::vector<std::string>& dofs_, const std::string& cameraLink_)
     {
         dofs = dofs_;
@@ -239,46 +290,9 @@ namespace gtsam
                 std::cout << "URI exists\n";
             }
         }
-        world = std::make_shared<dart::simulation::World>();
+
         skeleton= urdfLoader.parseSkeleton(urdf, resourceRetriever);
-        world->addSkeleton(skeleton);
-        viewer = std::make_shared<aikido::rviz::InteractiveMarkerViewer>("dart_markers");
-
-        viewer->addSkeleton(skeleton);
-
-
-        std::vector<dart::dynamics::DegreeOfFreedom*> dofVec;
-
-        for (size_t i = 0; i < dofs.size(); i++)
-        {
-            dofVec.push_back(skeleton->getDof(dofs.at(i)));
-        }
-
-        cameraBody = skeleton->getBodyNode(cameraLink_);
-
-        arm = dart::dynamics::Group::create("arm", dofVec, false, true);
-
-        //dart::dynamics::SkeletonPtr box =  CreateBox("box", Eigen::Vector3d(1, 1, 0.01), Eigen::Vector3d(0, 0, -0.1), 1.0);
-        //world->addSkeleton(box);
-        //viewer->addSkeleton(box);
-
-        if (params.drawEstimateRobot)
-        {
-            estimateSkeleton = urdfLoader.parseSkeleton(urdf, resourceRetriever);
-            estimateSkeleton->setName("estimate_ada");
-            std::vector<dart::dynamics::DegreeOfFreedom*> dofVec2;
-
-            for (size_t i = 0; i < dofs.size(); i++)
-            {
-                dofVec2.push_back(estimateSkeleton->getDof(dofs.at(i)));
-            }
-
-            estimateArm = dart::dynamics::Group::create("estimateArm", dofVec2, false, true);
-
-
-            aikido::rviz::SkeletonMarkerPtr marker = viewer->addSkeleton(estimateSkeleton);
-            marker->SetColor(Eigen::Vector4d(0.5, 1.0, 0.5, 0.5));
-        }
+        InitRobot(skeleton, dofs_, cameraLink_);
     }
 
     void ArmSlamCalib::SimulationStep(size_t iter)
@@ -294,25 +308,32 @@ namespace gtsam
 
     void ArmSlamCalib::Params::InitializeNodehandleParams(const ros::NodeHandle& nh)
     {
-        nh.param("encoder_noise_level", encoderNoiseLevel, landmarkNoiseLevel);
-        nh.param("extrinsic_noise_level", extrinsicNoiseLevel, landmarkNoiseLevel);
-        nh.param("extrinsic_rot_noise_level", extrinsicRotNoiseLevel, landmarkNoiseLevel);
+        nh.param("encoder_noise_level", encoderNoiseLevel, encoderNoiseLevel);
+        nh.param("extrinsic_noise_level", extrinsicNoiseLevel, extrinsicRotNoiseLevel);
+        nh.param("extrinsic_rot_noise_level", extrinsicRotNoiseLevel, extrinsicRotNoiseLevel);
         nh.param("landmark_noise_level", landmarkNoiseLevel, landmarkNoiseLevel);
         nh.param("projection_noise_level", projectionNoiseLevel, projectionNoiseLevel);
         nh.param("drift_noise_level", driftNoise, driftNoise);
         nh.param("use_drift_noise", addDriftNoise, addDriftNoise);
-        nh.param("do_slam", doOptimize, addDriftNoise);
+        nh.param("do_slam", doOptimize, doOptimize);
+        nh.param("fx", fx, fx);
+        nh.param("fy", fy, fy);
+        nh.param("cx", cx, cx);
+        nh.param("cy", cy, cy);
+        int tsize = (int)trajectorySize;
+        nh.param("trajectory_length", tsize, tsize);
+        trajectorySize = tsize;
+
         std::vector<double> extTranslation;
         std::vector<double> extRotation;
-        std::vector<double> zeros;
-        zeros.push_back(0);
-        zeros.push_back(0);
-        zeros.push_back(0);
+        extTranslation.push_back(extrinsicInitialGuess.translation().x());
+        extTranslation.push_back(extrinsicInitialGuess.translation().y());
+        extTranslation.push_back(extrinsicInitialGuess.translation().z());
         std::vector<double> piRot;
-        piRot.push_back(0);
-        piRot.push_back(0);
-        piRot.push_back(3.14159);
-        nh.param("extrinsic_initial_guess_translation", extTranslation, zeros);
+        piRot.push_back(extrinsicInitialGuess.rotation().roll());
+        piRot.push_back(extrinsicInitialGuess.rotation().pitch());
+        piRot.push_back(extrinsicInitialGuess.rotation().yaw());
+        nh.param("extrinsic_initial_guess_translation", extTranslation, piRot);
         nh.param("extrinsic_initial_guess_rotation", extRotation, piRot);
 
         nh.param("run_ransac", runRansac, runRansac);
@@ -320,8 +341,8 @@ namespace gtsam
         nh.param("generate_stitched_point_clouds", generateStitchedPointClouds, generateStitchedPointClouds);
         nh.param("generate_current_point_cloud", generateCurrentPointCloud, generateCurrentPointCloud);
         nh.param("compute_extrinsic_marginals", computeExtrinsicMarginals, computeExtrinsicMarginals);
-        nh.param("draw_estimate_robot", drawEstimateRobot, false);
-        nh.param("use_encoder_deadband", useDeadBand, true);
+        nh.param("draw_estimate_robot", drawEstimateRobot, drawEstimateRobot);
+        nh.param("use_encoder_deadband", useDeadBand, useDeadBand);
         nh.param("encoder_deadband", deadBandSize, deadBandSize);
         nh.param("add_sim_perlin_noise", addSimPerlinNoise, addSimPerlinNoise);
         nh.param("sim_perlin_noise_magnitude", simPerlinMagnitude, simPerlinMagnitude);
@@ -457,35 +478,39 @@ namespace gtsam
     void ArmSlamCalib::CreateSimTrajectory()
     {
         Eigen::VectorXd q = arm->getPositions();
+        Eigen::VectorXd qDot =  Eigen::VectorXd::Ones(arm->getNumDofs()) * 0.001f;
+        Eigen::VectorXd offset = Eigen::VectorXd::Ones(arm->getNumDofs()) * 0.25;
+
+        std::default_random_engine generator(nh.param("seed", 0));
+        std::normal_distribution<double> distribution(0, params.encoderNoiseLevel);
 
         for (size_t i = 0; i < params.trajectorySize; i++)
         {
             Eigen::VectorXd encoder = q;
+            Eigen::VectorXd noise = GetPerlinNoise(q + offset * (i * 0.01), 1.0f, 0.01f);
 
             for (size_t k = 0; k < dofs.size(); k++)
             {
-                if (k == 0)
+                noise(k) += distribution(generator) * 0.01;
+            }
+
+            qDot += noise;
+            q += qDot;
+
+            for (size_t k = 0; k < dofs.size(); k++)
+            {
+                if (q(k) > arm->getPositionUpperLimit(k) || q(k) < arm->getPositionLowerLimit(k))
                 {
-                    q(k) += 0.01;
-                }
-                else if (k == 5)
-                {
-                    q(k) = 1.57;
-                }
-                else if(k == 4)
-                {
-                    q(k) = -1;
-                }
-                else
-                {
-                    q(k) += cos(k * 50 + 0.005 * i) * 0.001;
+                    qDot(k) *= -0.5;
                 }
 
-                encoder(k) = q(k) + sin(i * 0.01f) * params.encoderNoiseLevel * 0.25f;
+                q(k) = fmax(fmin(q(k), arm->getPositionUpperLimit(k)), arm->getPositionLowerLimit(k));
+                encoder(k) = q(k) + distribution(generator);
             }
             simTrajectory.push_back(q);
             simEncoders.push_back(encoder);
         }
+        groundTruth.insert(Symbol('K', 0), simExtrinsic);
         simJointPublisher = nh.advertise<sensor_msgs::JointState>("/sim_joints", 10);
         simJointPublisher_groundtruth = nh.advertise<sensor_msgs::JointState>("/sim_joints_groundtruth", 10);
         simEEPublisher = nh.advertise<geometry_msgs::PoseStamped>("/in/pose", 10);
@@ -537,7 +562,7 @@ namespace gtsam
         ros::spinOnce();
     }
 
-    void ArmSlamCalib::CreateSimulation()
+    void ArmSlamCalib::CreateSimulation(const std::string& trajectoryFile)
     {
         for (size_t x = 0; x < params.numLandmarksX; x++)
         {
@@ -545,7 +570,7 @@ namespace gtsam
             {
                 double lx = x * (params.landmarkSizeX / params.numLandmarksX) - params.landmarkSizeX * 0.5f;
                 double ly = y * (params.landmarkSizeY / params.numLandmarksY) - params.landmarkSizeY * 0.5f;
-                double lz = (sin(lx * 2) + cos(ly * 2) + 2) * (pow(lx, 2) + pow(ly, 2)) * 0.1;
+                double lz = utils::Rand(-5, 5);
                 simLandmarks.push_back(gtsam::Point3(lx * 2, ly * 2, lz));
             }
         }
@@ -567,13 +592,21 @@ namespace gtsam
         encoders = Eigen::aligned_vector<gtsam::Vector>(params.trajectorySize, gtsam::Vector::Zero(dofs.size()));
 
         calibrationPrior = noiseModel::Diagonal::Sigmas((Vector(6) << Vector3::Constant(params.extrinsicNoiseLevel), Vector3::Constant(params.extrinsicRotNoiseLevel)));
-        AddFactor(boost::make_shared<PriorFactor<Pose3> >(Symbol('K', 0), Pose3::identity(), calibrationPrior));
+        AddFactor(boost::make_shared<PriorFactor<Pose3> >(Symbol('K', 0), params.extrinsicInitialGuess, calibrationPrior));
 
-        //Pose3 calibInit =Pose3(Rot3::RzRyRx(Rand(params.extrinsicRotNoiseLevel), Rand(params.extrinsicRotNoiseLevel), Rand(params.extrinsicRotNoiseLevel)), gtsam::Point3(Rand(params.extrinsicNoiseLevel), Rand(params.extrinsicNoiseLevel), Rand(params.extrinsicNoiseLevel)));
-        Pose3 calibInit = Pose3::identity();
+        std::cout << "Initial pose: " << params.extrinsicInitialGuess << std::endl;
+        std::cout << "Sim pose: " << simExtrinsic << std::endl;
+        Pose3 calibInit = params.extrinsicInitialGuess;
         AddValue(Symbol('K', 0), calibInit);
-        //groundTruth.insert(Symbol('K', 0), Pose3::identity());
-        LoadSimTrajectory("/home/mklingen/prdev/src/arm_slam_calib/data/traj.txt");
+
+        if (trajectoryFile != "")
+        {
+            LoadSimTrajectory(trajectoryFile);
+        }
+        else
+        {
+            CreateSimTrajectory();
+        }
 
         trajectory = simTrajectory;
         encoders = simEncoders;
@@ -971,7 +1004,7 @@ namespace gtsam
 
             pointCloudPublisher.publish(compositeCloud);
         }
-
+        arm->setPositions(armConfig);
         Timer::Tock("Display");
     }
 
@@ -1305,10 +1338,10 @@ namespace gtsam
         return error;
     }
 
-    void ArmSlamCalib::GetVisibleLandmarks(const gtsam::Vector& q, std::vector<Landmark>& lms)
+    void ArmSlamCalib::GetVisibleLandmarks(const gtsam::Vector& q, std::vector<Landmark>& lms, const gtsam::Pose3& extrinsic)
     {
         Timer::Tick("FrustumCull");
-        gtsam::Pose3 cameraPose = GetCameraPose(q);
+        gtsam::Pose3 cameraPose = GetCameraPose(q, extrinsic);
         gtsam::PinholeCamera<Cal3_S2> camera(cameraPose, *calib);
 
         for (auto it = landmarksObserved.begin(); it != landmarksObserved.end(); it++)
@@ -1356,7 +1389,7 @@ namespace gtsam
             ROS_INFO("Time %lu\n", timeIndex);
             std::vector<Landmark> newLandmarks;
             std::vector<Landmark> visibleLandmarks;
-            GetVisibleLandmarks(q, visibleLandmarks);
+            GetVisibleLandmarks(q, visibleLandmarks, GetCurrentExtrinsic());
             encoders.push_back(q);
 
             if (!params.simulated)
@@ -1600,7 +1633,7 @@ namespace gtsam
     bool ArmSlamCalib::GetNewLandmarksSimulated(size_t t, const std::vector<Landmark>& visibleLandmarks, std::vector<Landmark>& newLandmarks)
     {
         arm->setPositions(trajectory[t]);
-        PinholeCamera<Cal3_S2> camera(Pose3(cameraBody->getWorldTransform().matrix()), *calib);
+        PinholeCamera<Cal3_S2> camera(GetCameraPose(trajectory[t], simExtrinsic), *calib);
         PinholeCamera<Cal3_S2> estCamera(GetCameraPose(encoders[t]), *calib);
 
         for (size_t l = 0; l < simLandmarks.size(); l++)
@@ -1645,7 +1678,7 @@ namespace gtsam
 
         std::vector<Landmark> newLandmarks;
         std::vector<Landmark> visibleLandmarks;
-        GetVisibleLandmarks(q_gt, visibleLandmarks);
+        GetVisibleLandmarks(q_gt, visibleLandmarks, simExtrinsic);
 
         if (!GetNewLandmarksSimulated(timeIndex, visibleLandmarks, newLandmarks))
             return false;
@@ -1928,9 +1961,10 @@ namespace gtsam
     {
         std::ifstream infile(fileName);
 
-        std::default_random_engine generator;
+        std::default_random_engine generator(nh.param("seed", 0));
         std::normal_distribution<double> distribution(0, params.encoderNoiseLevel);
         bool firstIter = true;
+        std::cout << "Reading trajectory for arm with " << arm->getNumDofs() << " dofs." << std::endl;
         while (infile)
         {
             std::string s;
@@ -2134,9 +2168,9 @@ namespace gtsam
         gtsam::Vector toReturn = pos;
         toReturn.setZero();
 
-        for (size_t j = 0; j < pos.rows(); j++)
+        for (size_t j = 0; j < pos.size(); j++)
         {
-            toReturn(j) = (perlin.noise((double)j * 100, -(double)j * 999, (double)pos(j) * freq) - 0.5) * mag;
+            toReturn(j) = (perlin.noise((double)(j + 1) * 100, -(double)(j + 1) * 999, (double)pos(j) * freq) - 0.5) * mag;
         }
         return toReturn;
     }

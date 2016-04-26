@@ -149,11 +149,12 @@ include_directories(
 
 ## Declare a cpp library
  add_library(arm_slam_calib
-	src/ArmSlamCalib.cpp src/FrontEnd.cpp src/RelativePoseAdapter.cpp src/Timer.cpp src/PerlinNoise.cpp src/Utils.cpp src/RobotModifier.cpp
+	src/ArmSlamCalib.cpp src/FrontEnd.cpp src/RelativePoseAdapter.cpp src/Timer.cpp src/PerlinNoise.cpp src/Utils.cpp src/RobotModifier.cpp src/RobotGenerator.cpp
  )
 
 ## Declare a cpp executable
 add_executable(sim src/sim.cpp)
+add_executable(sim_genrobot src/sim_genrobot.cpp)
 add_executable(real src/real.cpp)
 add_executable(sim_image src/sim_image.cpp)
 
@@ -186,6 +187,11 @@ ${catkin_LIBRARIES}
 
 
 target_link_libraries(sim_image
+arm_slam_calib
+${catkin_LIBRARIES}
+)
+
+target_link_libraries(sim_genrobot
 arm_slam_calib
 ${catkin_LIBRARIES}
 )

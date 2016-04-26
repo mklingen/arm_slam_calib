@@ -10,6 +10,7 @@
 
 #include <gtsam/nonlinear/NonlinearFactor.h>
 #include <arm_slam_calib/RobotProjectionFactor.h>
+#include <arm_slam_calib/RobotConfig.h>
 #include <arm_slam_calib/Utils.h>
 //#define SANITY_CHECK
 
