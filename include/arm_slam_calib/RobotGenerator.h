@@ -17,7 +17,12 @@ namespace dart
         public:
             RobotGenerator();
             virtual ~RobotGenerator();
-            static dart::dynamics::SkeletonPtr GenerateRobot(size_t numDof, float scale = 1.0f, float growth = 0.6f, float randomLength = 0.01f, float randomAngle = 0.01f);
+            static dart::dynamics::SkeletonPtr GenerateRobot(size_t numDof,
+                                                             float scale = 1.0f,
+                                                             float growth = 0.6f,
+                                                             float randomLength = 0.01f,
+                                                             float randomAngle = 0.01f,
+                                                             bool movableBase = false);
     };
 
 } /* namespace dart */

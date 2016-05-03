@@ -149,7 +149,7 @@ include_directories(
 
 ## Declare a cpp library
  add_library(arm_slam_calib
-	src/ArmSlamCalib.cpp src/FrontEnd.cpp src/RelativePoseAdapter.cpp src/Timer.cpp src/PerlinNoise.cpp src/Utils.cpp src/RobotModifier.cpp src/RobotGenerator.cpp
+	src/ArmSlamCalib.cpp src/FrontEnd.cpp src/RelativePoseAdapter.cpp src/Timer.cpp src/PerlinNoise.cpp src/Utils.cpp  src/RobotGenerator.cpp
  )
 
 ## Declare a cpp executable

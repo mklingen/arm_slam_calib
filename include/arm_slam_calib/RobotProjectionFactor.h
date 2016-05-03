@@ -111,14 +111,16 @@ namespace gtsam
                         Matrix j2Diff = zeros(2, 3);
                         Matrix j3Diff = zeros(2, 6);
 
-                        double diffQSize = 0.01;
+                        double diffQSize = 0.001;
                         for (size_t j = 0; j < config.dim(); j++)
                         {
                             Vector dQ = zeros(config.dim(), 1);
                             dQ(j) += diffQSize;
 
-                            Point2 ptPlus = project(dQ + config.getQ(), landmark, extrinsic);
-                            Point2 ptMinus = project(config.getQ() - dQ, landmark, extrinsic);
+
+
+                            Point2 ptPlus = project(config.retract(dQ).getQ(), landmark, extrinsic);
+                            Point2 ptMinus = project(config.retract(-dQ).getQ(), landmark, extrinsic);
 
                             Point2 centralDifference =  (ptPlus - ptMinus) / (2 * diffQSize);
                             j1Diff.col(j) = centralDifference.vector();

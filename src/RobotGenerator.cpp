@@ -19,7 +19,12 @@ namespace dart
 
     }
 
-    SkeletonPtr RobotGenerator::GenerateRobot(size_t numDof, float scale, float growth, float randomLength, float randomAngle)
+    SkeletonPtr RobotGenerator::GenerateRobot(size_t numDof,
+                                              float scale,
+                                              float growth,
+                                              float randomLength,
+                                              float randomAngle,
+                                              bool movableBase)
     {
         Skeleton::Properties properties;
         properties.mEnabledAdjacentBodyCheck = true;
@@ -31,7 +36,26 @@ namespace dart
 
         SkeletonPtr robot = Skeleton::create(properties);
 
+
         BodyNode* parentLink = 0x0;
+
+        if (movableBase)
+        {
+            FreeJoint::Properties jointProperties;
+            jointProperties.mName = "base";
+
+            BodyNode::Properties linkProperties;
+            linkProperties.mName = "base_link";
+
+            std::pair<FreeJoint*, BodyNode*> jointAndLink = robot->createJointAndBodyNodePair<FreeJoint, BodyNode>(parentLink, jointProperties, linkProperties);
+            parentLink = jointAndLink.second;
+
+            auto shapeNode
+                = parentLink->createShapeNodeWith<VisualAddon>(std::make_shared<BoxShape>(Eigen::Vector3d(scale * 0.5, scale * 0.1, scale * 0.5)));
+            shapeNode->getVisualAddon()->setColor(Eigen::Vector3d(0, 0, 1));
+        }
+
+
         float lastLinklength = 0;
         float linkScale = scale;
         for (size_t i = 0; i < numDof; i++)

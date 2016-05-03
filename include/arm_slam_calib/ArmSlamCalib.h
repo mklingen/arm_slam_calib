@@ -77,10 +77,12 @@ namespace gtsam
                         cx(640 / 2),
                         cy(480 /2),
                         encoderNoiseLevel(0.1),
+                        velocityNoiseLevel(0.001),
                         extrinsicNoiseLevel(0.2),
                         extrinsicRotNoiseLevel(0.2),
                         landmarkNoiseLevel(30.0),
                         driftNoise(0.05),
+                        initialPosePriorNoise(0.00001),
                         projectionNoiseLevel(1.0),
                         extrinsicInitialGuess(gtsam::Pose3::identity()),
                         runRansac(true),
@@ -95,6 +97,7 @@ namespace gtsam
                         optimizationMode(BatchDogleg),
                         simulated(false),
                         doOptimize(true),
+                        useVelocityNoise(false),
                         addSimPerlinNoise(true),
                         simPerlinMagnitude(0.2),
                         simPerlinFrequency(0.5)
@@ -119,11 +122,13 @@ namespace gtsam
                     double cx;
                     double cy;
                     double encoderNoiseLevel;
+                    double velocityNoiseLevel;
                     double extrinsicNoiseLevel;
                     double extrinsicRotNoiseLevel;
                     double landmarkNoiseLevel;
                     double projectionNoiseLevel;
                     double driftNoise;
+                    double initialPosePriorNoise;
                     gtsam::Pose3 extrinsicInitialGuess;
                     bool runRansac;
                     bool saveImages;
@@ -135,6 +140,7 @@ namespace gtsam
                     bool addDriftNoise;
                     bool simulated;
                     bool doOptimize;
+                    bool useVelocityNoise;
                     double deadBandSize;
                     bool addSimPerlinNoise;
                     double simPerlinMagnitude;
@@ -206,6 +212,8 @@ namespace gtsam
             void ShowReprojectionErrors();
             void SaveGraph();
 
+            Vector GetAugmentedEncoders(size_t iter);
+
             void AddFactor(const gtsam::NonlinearFactor::shared_ptr& factor);
             void AddValue(const gtsam::Key& key, const gtsam::Value& value);
 
@@ -233,6 +241,11 @@ namespace gtsam
 
             Eigen::aligned_vector<gtsam::Vector>& GetSimTrajectory() { return simTrajectory; }
 
+            void AddLandmarkPrior(size_t idx, const gtsam::Point3& position);
+            void AddEncoderFactor(size_t idx, const gtsam::Vector& encoders);
+            void AddDriftFactor(size_t idx);
+            void AddVelocityFactor(size_t idx);
+            void AddObservationFactor(const gtsam::Point2& observation, size_t configIdx, size_t landmarkIdx);
             void SaveStitchedPointClouds(const std::string& file);
 
             gtsam::Vector GetPerlinNoise(const gtsam::Vector& pos, const double& freq, const double& mag);
@@ -246,6 +259,10 @@ namespace gtsam
 
             inline void SetSimExtrinsic(const gtsam::Pose3& pose_) { simExtrinsic = pose_; }
             inline const gtsam::Pose3& GetSimExtrinsic() const { return simExtrinsic; }
+
+            inline Key ExtrinsicSymbol() { return Symbol('K', 0); }
+            inline Key ConfigSymbol(size_t i) { return Symbol('q', i); }
+            inline Key LandmarkSymbol(size_t i) { return Symbol('l', i); }
 
             gtsam::Values initialEstimate;
             gtsam::Values currentEstimate;
@@ -285,12 +302,16 @@ namespace gtsam
             Eigen::aligned_vector<gtsam::Vector> simTrajectory;
             Eigen::aligned_vector<gtsam::Vector> simEncoders;
             Eigen::aligned_vector<gtsam::Vector> encoders;
+            Eigen::aligned_vector<gtsam::Vector> velocities;
+            Eigen::aligned_vector<gtsam::Vector> simVelocities;
             std::vector<cv::Mat> images;
             std::vector<gtsam::Point3> simLandmarks;
             std::map<size_t, Landmark> landmarksObserved;
             gtsam::noiseModel::Diagonal::shared_ptr encoderNoise;
             gtsam::noiseModel::Diagonal::shared_ptr calibrationPrior;
             gtsam::noiseModel::Diagonal::shared_ptr driftNoise;
+            gtsam::noiseModel::Diagonal::shared_ptr velocityNoise;
+            gtsam::noiseModel::Diagonal::shared_ptr initialPoseNoise;
             gtsam::noiseModel::Robust::shared_ptr measurementNoise;
             gtsam::noiseModel::Robust::shared_ptr landmarkPrior;
             gtsam::noiseModel::mEstimator::Cauchy::shared_ptr cauchyEstimator;
