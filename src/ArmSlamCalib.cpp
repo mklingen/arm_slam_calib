@@ -304,8 +304,11 @@ namespace gtsam
     void ArmSlamCalib::SimulationStep(size_t iter)
     {
         Vector q = trajectory[iter];
-        Vector enc = GetAugmentedEncoders(iter);
+        Vector enc = GetAugmentedEncoders(iter, currentEstimate);
+        Vector enc_drift = GetAugmentedEncoders(iter, initialEstimate);
         AddValue(ConfigSymbol(iter), RobotConfig(enc, arm));
+        initialEstimate.erase(ConfigSymbol(iter));
+        initialEstimate.insert(ConfigSymbol(iter), RobotConfig(enc_drift, arm));
         groundTruth.insert(ConfigSymbol(iter), RobotConfig(q, arm));
         AddEncoderFactor(iter, enc);
         if (params.addDriftNoise && iter > 0)
@@ -321,7 +324,7 @@ namespace gtsam
         SimulateObservationsTriangulate(iter);
     }
 
-    Vector ArmSlamCalib::GetAugmentedEncoders(size_t iter)
+    Vector ArmSlamCalib::GetAugmentedEncoders(size_t iter, const gtsam::Values& state)
     {
 
         if (iter == 0)
@@ -330,17 +333,18 @@ namespace gtsam
         }
         else
         {
-            if (currentEstimate.find(ConfigSymbol(iter - 1)) == currentEstimate.end())
+            if (state.find(ConfigSymbol(iter - 1)) == state.end())
             {
                 return encoders[iter];
             }
             else
             {
-                Vector oldEnc = currentEstimate.at<RobotConfig>(ConfigSymbol(iter - 1)).getQ();
+                Vector oldEnc = state.at<RobotConfig>(ConfigSymbol(iter - 1)).getQ();
                 Vector toReturn = encoders[iter];
                 for (size_t j = 0; j < arm->getNumDofs(); j++)
                 {
-                    bool isFree = dynamic_cast<dart::dynamics::FreeJoint*>(arm->getDof(j)->getJoint()) != 0x0;
+                    bool isFree = dynamic_cast<dart::dynamics::FreeJoint*>(arm->getDof(j)->getJoint()) != 0x0
+                                  || dynamic_cast<dart::dynamics::PlanarJoint*>(arm->getDof(j)->getJoint()) != 0x0;
 
                     if (isFree)
                     {
@@ -531,7 +535,7 @@ namespace gtsam
         Eigen::VectorXd offset = Eigen::VectorXd::Ones(arm->getNumDofs()) * 0.25;
 
         std::default_random_engine generator(nh.param("seed", 0));
-        std::normal_distribution<double> distribution(0, 0.01f);
+        std::normal_distribution<double> distribution(0, params.encoderNoiseLevel);
         std::normal_distribution<double> velocityDistribution(0, params.velocityNoiseLevel);
 
         RobotConfig config(q, arm);
@@ -544,12 +548,13 @@ namespace gtsam
             for (size_t k = 0; k < arm->getNumDofs(); k++)
             {
 
-                bool isFree = (dynamic_cast<dart::dynamics::FreeJoint*>(arm->getDof(k)->getJoint()) != 0x0);
+                bool isFree = (dynamic_cast<dart::dynamics::FreeJoint*>(arm->getDof(k)->getJoint()) != 0x0)
+                             || (dynamic_cast<dart::dynamics::PlanarJoint*>(arm->getDof(k)->getJoint()) != 0x0);
                 noise(k) += distribution(generator) * 0.01;
 
                 if (isFree)
                 {
-                    noise(k) *= 0.01;
+                    noise(k) *= 0.1;
                 }
             }
 
@@ -560,7 +565,8 @@ namespace gtsam
             config = newConfig;
             for (size_t k = 0; k < arm->getNumDofs(); k++)
             {
-                bool isFree = (dynamic_cast<dart::dynamics::FreeJoint*>(arm->getDof(k)->getJoint()) != 0x0);
+                bool isFree = (dynamic_cast<dart::dynamics::FreeJoint*>(arm->getDof(k)->getJoint()) != 0x0)
+                             || (dynamic_cast<dart::dynamics::PlanarJoint*>(arm->getDof(k)->getJoint()) != 0x0);
 
                 if (q(k) > arm->getPositionUpperLimit(k) || q(k) < arm->getPositionLowerLimit(k))
                 {
@@ -593,7 +599,11 @@ namespace gtsam
 
     void ArmSlamCalib::SimulateImageStep(size_t iter)
     {
-        if (iter >= simTrajectory.size()) return;
+        if (iter >= simTrajectory.size())
+        {
+            ROS_WARN("Trajectory over already...");
+            return;
+        }
 
         sensor_msgs::JointState jointState;
         sensor_msgs::JointState jointState_groundtruth;
@@ -883,9 +893,9 @@ namespace gtsam
         {
             visualization_msgs::Marker trajectoryViz;
             trajectoryViz.pose.orientation.w = 1;
-            trajectoryViz.scale.x = 0.0025;
-            trajectoryViz.scale.y = 0.0025;
-            trajectoryViz.scale.z = 0.0025;
+            trajectoryViz.scale.x = 0.02;
+            trajectoryViz.scale.y = 0.02;
+            trajectoryViz.scale.z = 0.02;
             trajectoryViz.header.frame_id = "/map";
             trajectoryViz.header.stamp = ros::Time::now();
             trajectoryViz.id = id * numMarkers + 1;
@@ -1604,13 +1614,17 @@ namespace gtsam
         size_t i = landmark.id;
         landmark.isNew = false;
         landmark.isInGraph = true;
+
         if (currentEstimate.find(LandmarkSymbol(i)) != currentEstimate.end())
             currentEstimate.erase(LandmarkSymbol(i));
         if (initialEstimate.find(LandmarkSymbol(i)) != initialEstimate.end())
             initialEstimate.erase(LandmarkSymbol(i));
+
         AddValue(LandmarkSymbol(i), landmark.position);
+
         if (groundTruth.find(LandmarkSymbol(i)) != groundTruth.end())
             groundTruth.erase(LandmarkSymbol(i));
+
         groundTruth.insert(LandmarkSymbol(i), landmark.position);
         AddLandmarkPrior(i, landmark.position);
         for (size_t k = 0; k < landmark.observations.size(); k++)
@@ -1808,7 +1822,8 @@ namespace gtsam
 
     bool ArmSlamCalib::SimulateObservationsTriangulate(size_t timeIndex)
     {
-        gtsam::Vector q = GetAugmentedEncoders(timeIndex);
+        gtsam::Vector q = GetAugmentedEncoders(timeIndex, currentEstimate);
+        gtsam::Vector q_drift = GetAugmentedEncoders(timeIndex, initialEstimate);
         gtsam::Vector q_gt = trajectory.at(timeIndex);
 
         gtsam::Pose3 cameraPose = GetCameraPose(q);

@@ -63,7 +63,7 @@ namespace gtsam
                 for (size_t i = 0; i < robot.dim(); i++)
                 {
                     // Free joints do not have encoders.
-                    if (robot.IsFree(i))
+                    if (robot.IsFree(i) || robot.IsPlanar(i))
                     {
                         diff(i) = 0;
                     }
@@ -97,7 +97,7 @@ namespace gtsam
                     for (size_t i = 0; i < q.dim(); i++)
                     {
                         // Free joints do not have encoders.
-                        if (q.IsFree(i))
+                        if (q.IsFree(i) || q.IsPlanar(i))
                         {
                            J->col(i) *= 0;
                         }

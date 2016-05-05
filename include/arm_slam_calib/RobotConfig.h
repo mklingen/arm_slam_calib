@@ -19,6 +19,9 @@ namespace gtsam
         protected:
             Vector q;
             dart::dynamics::GroupPtr arm;
+            std::vector<bool> freeJoints;
+            std::vector<bool> planarJoints;
+            bool initialized;
 
         public:
 
@@ -27,18 +30,42 @@ namespace gtsam
                 return q;
             }
 
-            RobotConfig()
+            RobotConfig():
+                initialized(false)
             {
 
             }
 
+            bool IsPlanar(size_t index) const
+            {
+                if (!initialized)
+                {
+                    const dart::dynamics::DegreeOfFreedom* dof = arm->getDof(index);
+                    const dart::dynamics::PlanarJoint* freeJoint = dynamic_cast<const dart::dynamics::PlanarJoint*>(dof->getJoint());
+                    if (freeJoint)
+                        return true;
+                    else return false;
+                }
+                else
+                {
+                    return planarJoints[index];
+                }
+            }
+
             bool IsFree(size_t index) const
             {
-                const dart::dynamics::DegreeOfFreedom* dof = arm->getDof(index);
-                const dart::dynamics::FreeJoint* freeJoint = dynamic_cast<const dart::dynamics::FreeJoint*>(dof->getJoint());
-                if (freeJoint)
-                    return true;
-                else return false;
+                if (!initialized)
+                {
+                    const dart::dynamics::DegreeOfFreedom* dof = arm->getDof(index);
+                    const dart::dynamics::FreeJoint* freeJoint = dynamic_cast<const dart::dynamics::FreeJoint*>(dof->getJoint());
+                    if (freeJoint)
+                        return true;
+                    else return false;
+                }
+                else
+                {
+                    return freeJoints[index];
+                }
             }
 
 
@@ -54,7 +81,13 @@ namespace gtsam
             RobotConfig(const Vector& q_, const dart::dynamics::GroupPtr& arm_) :
                 q(q_), arm(arm_)
             {
-
+                initialized = false;
+                for (size_t i = 0; i < arm_->getNumDofs(); i++)
+                {
+                    freeJoints.push_back(IsFree(i));
+                    planarJoints.push_back(IsPlanar(i));
+                }
+                initialized = true;
             }
 
             // Print for unit tests and debugging (virtual, implements Value::print())
@@ -79,16 +112,7 @@ namespace gtsam
             inline RobotConfig retract(const Vector& delta) const
             {
                 Vector sum = q + delta;
-                bool hasFreeBase = false;
-                for (size_t k = 0; k < dim(); k++)
-                {
-                    if (IsFree(k))
-                    {
-                        hasFreeBase = true;
-                        break;
-                    }
-                }
-
+                bool hasFreeBase = IsFree(0);
                 if (hasFreeBase)
                 {
                     Eigen::Isometry3d pose = dart::dynamics::FreeJoint::convertToTransform(getQ().head(6));
@@ -105,16 +129,7 @@ namespace gtsam
             inline Vector localCoordinates(const RobotConfig& r2) const
             {
                 Vector sum = r2.q - q;
-                bool hasFreeBase = false;
-                for (size_t k = 0; k < dim(); k++)
-                {
-                  if (IsFree(k))
-                  {
-                      hasFreeBase = true;
-                      break;
-                  }
-                }
-
+                bool hasFreeBase = IsFree(0);
                 if (hasFreeBase)
                 {
                   Eigen::Isometry3d pose = dart::dynamics::FreeJoint::convertToTransform(getQ().head(6));

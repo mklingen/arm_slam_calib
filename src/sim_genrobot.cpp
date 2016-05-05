@@ -69,10 +69,10 @@ int main(int argc, char** argv)
 
     gtsam::ArmSlamCalib calib(nh, std::make_shared<std::mutex>(), params);
     calib.SetSimExtrinsic(gt_pose);
-
+    size_t base_dofs = 6;
     std::vector<std::string> joints;
-    dart::dynamics::SkeletonPtr genSkeleton = dart::RobotGenerator::GenerateRobot(num_dofs, 0.5, 0.7, 0.01, 0.1, true);
-    num_dofs += 6;
+    dart::dynamics::SkeletonPtr genSkeleton = dart::RobotGenerator::GenerateRobot(num_dofs, 0.5, 0.7, 0.01, 0.1, true, base_dofs);
+    num_dofs += base_dofs;
 
     for (size_t i = 0; i < genSkeleton->getNumDofs(); i++)
     {

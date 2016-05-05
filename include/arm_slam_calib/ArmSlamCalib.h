@@ -68,10 +68,10 @@ namespace gtsam
                 public:
                     Params() :
                         trajectorySize(1000),
-                        numLandmarksX(20),
-                        numLandmarksY(20),
-                        landmarkSizeX(3),
-                        landmarkSizeY(3),
+                        numLandmarksX(25),
+                        numLandmarksY(25),
+                        landmarkSizeX(10),
+                        landmarkSizeY(10),
                         fx(640),
                         fy(640),
                         cx(640 / 2),
@@ -89,7 +89,7 @@ namespace gtsam
                         saveImages(false),
                         generateStitchedPointClouds(true),
                         generateCurrentPointCloud(true),
-                        computeExtrinsicMarginals(true),
+                        computeExtrinsicMarginals(false),
                         drawEstimateRobot(false),
                         useDeadBand(false),
                         addDriftNoise(false),
@@ -212,7 +212,7 @@ namespace gtsam
             void ShowReprojectionErrors();
             void SaveGraph();
 
-            Vector GetAugmentedEncoders(size_t iter);
+            Vector GetAugmentedEncoders(size_t iter, const gtsam::Values& state);
 
             void AddFactor(const gtsam::NonlinearFactor::shared_ptr& factor);
             void AddValue(const gtsam::Key& key, const gtsam::Value& value);

@@ -22,7 +22,8 @@ namespace dart
                                                              float growth = 0.6f,
                                                              float randomLength = 0.01f,
                                                              float randomAngle = 0.01f,
-                                                             bool movableBase = false);
+                                                             bool movableBase = false,
+                                                             size_t baseDofs = 6);
     };
 
 } /* namespace dart */

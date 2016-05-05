@@ -24,7 +24,8 @@ namespace dart
                                               float growth,
                                               float randomLength,
                                               float randomAngle,
-                                              bool movableBase)
+                                              bool movableBase,
+                                              size_t baseDofs)
     {
         Skeleton::Properties properties;
         properties.mEnabledAdjacentBodyCheck = true;
@@ -41,17 +42,40 @@ namespace dart
 
         if (movableBase)
         {
-            FreeJoint::Properties jointProperties;
-            jointProperties.mName = "base";
-
             BodyNode::Properties linkProperties;
             linkProperties.mName = "base_link";
 
-            std::pair<FreeJoint*, BodyNode*> jointAndLink = robot->createJointAndBodyNodePair<FreeJoint, BodyNode>(parentLink, jointProperties, linkProperties);
-            parentLink = jointAndLink.second;
+            switch (baseDofs)
+            {
+                case 3:
+                {
+                    PlanarJoint::Properties jointProperties;
+                    jointProperties.mName = "base";
+                    jointProperties.mPlaneType = PlanarJoint::PlaneType::XY;
+                    jointProperties.mIsPositionLimited = false;
+                    jointProperties.mRotAxis = Eigen::Vector3d::UnitZ();
+                    jointProperties.mTransAxis1 = Eigen::Vector3d::UnitX();
+                    jointProperties.mTransAxis2 = Eigen::Vector3d::UnitY();
 
+                    std::pair<PlanarJoint*, BodyNode*> jointAndLink =
+                            robot->createJointAndBodyNodePair<PlanarJoint, BodyNode>(parentLink, jointProperties, linkProperties);
+                    parentLink = jointAndLink.second;
+
+                    break;
+                }
+                case 6:
+                {
+                    FreeJoint::Properties jointProperties;
+                    jointProperties.mName = "base";
+
+                    std::pair<FreeJoint*, BodyNode*> jointAndLink = robot->createJointAndBodyNodePair<FreeJoint, BodyNode>(parentLink, jointProperties, linkProperties);
+                    parentLink = jointAndLink.second;
+
+                    break;
+                }
+            }
             auto shapeNode
-                = parentLink->createShapeNodeWith<VisualAddon>(std::make_shared<BoxShape>(Eigen::Vector3d(scale * 0.5, scale * 0.1, scale * 0.5)));
+                = parentLink->createShapeNodeWith<VisualAddon>(std::make_shared<BoxShape>(Eigen::Vector3d(scale * 0.5, scale * 0.5, scale * 0.1)));
             shapeNode->getVisualAddon()->setColor(Eigen::Vector3d(0, 0, 1));
         }
 
@@ -94,7 +118,8 @@ namespace dart
             else
             {
                 jointProperties.mT_ParentBodyToJoint = Eigen::Isometry3d::Identity();
-                jointProperties.mT_ChildBodyToJoint.translation() = Eigen::Vector3d(-linkScale * 0.5, 0, 0);
+                jointProperties.mT_ParentBodyToJoint.linear() = Eigen::AngleAxisd(-1.57, Eigen::Vector3d(0, 1, 0)).toRotationMatrix();
+                jointProperties.mT_ChildBodyToJoint.translation() = Eigen::Vector3d(-scale * 0.5, 0, 0);
             }
 
             jointProperties.mAxis =  Eigen::Vector3d(0, 0, 1);
@@ -113,11 +138,11 @@ namespace dart
 
         }
 
-        BodyNode* ee = robot->getBodyNode(numDof - 1);
-        Eigen::Isometry3d pose = ee->getWorldTransform();
+        //BodyNode* ee = robot->getBodyNode(numDof - 1);
+        //Eigen::Isometry3d pose = ee->getWorldTransform();
 
-        Joint* joint0 = robot->getJoint(0);
-        joint0->setTransformFromParentBodyNode(pose.inverse());
+        //Joint* joint0 = robot->getJoint(0);
+        //joint0->setTransformFromParentBodyNode(pose.inverse());
         return robot;
     }
 
