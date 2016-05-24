@@ -2199,4 +2199,51 @@ namespace gtsam
         pcl::io::savePCDFileASCII(file.c_str(), *compositeCloud);
     }
 
+    void ArmSlamCalib::PrintLandmarkStats(std::ofstream& stream)
+    {
+        stream << landmarksObserved.size() << " ";
+        size_t numLandmarksInGraph = 0;
+        size_t numUninitialized = 0;
+        size_t num1OrLess = 0;
+        size_t num2OrLess = 0;
+        size_t num3OrLess = 0;
+        size_t num4OrMore = 0;
+        float avgNumObservations = 0;
+
+        for (auto it : landmarksObserved)
+        {
+            if(it.second.isInGraph)
+            {
+                numLandmarksInGraph++;
+            }
+            else
+            {
+                numUninitialized++;
+            }
+            size_t observations = it.second.observations.size();
+
+            if (observations <= 1)
+            {
+                num1OrLess++;
+            }
+            else if (observations == 2)
+            {
+                num2OrLess++;
+            }
+            else if (observations == 3)
+            {
+                num3OrLess++;
+            }
+            else if (observations >= 4)
+            {
+                num4OrMore++;
+            }
+            avgNumObservations += observations;
+        }
+        avgNumObservations /= landmarksObserved.size();
+
+        stream << numLandmarksInGraph << " " << numUninitialized << " " << num1OrLess << " " << num2OrLess << " " << num3OrLess << " " << num4OrMore << " " << avgNumObservations << std::endl;
+
+    }
+
 } /* namespace gtsam */

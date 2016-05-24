@@ -227,6 +227,7 @@ namespace gtsam
             gtsam::Vector ComputeLatestGroundTruthSimOffsets(size_t t);
 
 
+            void PrintLandmarkStats(std::ofstream& stream);
             void PrintSimErrors(const std::string& dir, const std::string& postfix);
 
             inline gtsam::Pose3 GetSimExtrinsic() { return simExtrinsic; }

@@ -35,10 +35,11 @@
      <param name="depth_topic"                    value="/camera/depth/image_rect_raw"/>
      <param name="depth_info"                     value="/camera/depth/camera_info"/>
      <param name="joint_state_topic"              value="/mico_arm_driver/out/joint_state"/>
-     <rosparam param="extrinsic_initial_guess_translation">[0.0136688, 0.0486435, -0.0924387]</rosparam>
+     <!--<rosparam param="extrinsic_initial_guess_translation">[0.0136688, 0.0486435, -0.0924387]</rosparam>-->
+     <rosparam param="extrinsic_initial_guess_translation">[0, 0, 0]</rosparam>
      <rosparam param="extrinsic_initial_guess_rotation">[0, 0, 3.14159]</rosparam>
      <param name="drift_noise"    value="0.05"/>
-     <param name="use_drift_noise" value="true"/>
+     <param name="use_drift_noise" value="false"/>
      <param name="robust_cauchy_multiplier" value="3.0"/>
      <param name="draw_landmarks" value="true"/>
      <param name="draw_pointclouds" value="true"/>
@@ -46,7 +47,7 @@
      <param name="draw_observation" value="false"/>
      <param name="draw_extrinsic_marginal" value="false"/>
      <param name="draw_trajectory" value="false"/>
-     <param name="keyframe_threshold" value="0.08"/>
+     <param name="keyframe_threshold" value="0.02"/>
      <param name="do_slam" value="false"/>
     </node>
 </launch>

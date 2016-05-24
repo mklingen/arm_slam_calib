@@ -146,6 +146,7 @@ int main(int argc, char** argv)
     std::string postfix = "";
     nh.param("stats_postfix", postfix, postfix);
 
+    std::ofstream landmarkFile("landmarks.txt", std::ios::out);
     std::ofstream offsetFile("offsets.txt", std::ios::out);
     std::ofstream reprojectionFile("reproj_error.txt", std::ios::out);
     std::ofstream extrinsicFile("extrinsic_errors.txt", std::ios::out);
@@ -230,6 +231,7 @@ int main(int argc, char** argv)
                     extrinsicFile << std::endl;
                 }
 
+                calib.PrintLandmarkStats(landmarkFile);
             }
 
             lastConfig = currentConfig;

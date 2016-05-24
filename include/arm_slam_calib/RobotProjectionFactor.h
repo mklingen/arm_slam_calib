@@ -208,7 +208,7 @@ namespace gtsam
 
                 gtsam::Point3 cameraPoint = cameraCopy1.pose().transform_to(worldPoint);
 
-                if (cameraPoint.z() < 0.1)
+                if (cameraPoint.z() < 0.01)
                 {
                     if (J1) *J1 = zeros(2, robot->getNumDofs());
                     if (J2) *J2 = zeros(2, 3);
