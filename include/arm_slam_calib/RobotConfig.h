@@ -115,6 +115,8 @@ namespace gtsam
                 bool hasFreeBase = IsFree(0);
                 if (hasFreeBase)
                 {
+                    printf("What.\n");
+                    exit(-1);
                     Eigen::Isometry3d pose = dart::dynamics::FreeJoint::convertToTransform(getQ().head(6));
                     gtsam::Pose3 gt_pose(pose.matrix());
                     gtsam::Pose3 retracted = gt_pose.retract(delta.head(6));
@@ -132,6 +134,8 @@ namespace gtsam
                 bool hasFreeBase = IsFree(0);
                 if (hasFreeBase)
                 {
+                    printf("What.\n");
+                    exit(-1);
                   Eigen::Isometry3d pose = dart::dynamics::FreeJoint::convertToTransform(getQ().head(6));
                   Eigen::Isometry3d pose2 = dart::dynamics::FreeJoint::convertToTransform(r2.getQ().head(6));
                   gtsam::Pose3 gt_pose(pose.matrix());

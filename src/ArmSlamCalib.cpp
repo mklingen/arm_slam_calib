@@ -298,6 +298,9 @@ namespace gtsam
 
     void ArmSlamCalib::AddEncoderFactor(size_t idx, const gtsam::Vector& encoders)
     {
+        if (!params.useEncoderPositions && idx > 0)
+            return;
+
         AddFactor(boost::make_shared<EncoderFactor>(ConfigSymbol(idx), encoders, encoderNoise, params.useDeadBand, params.deadBandSize));
     }
 
@@ -341,6 +344,7 @@ namespace gtsam
             {
                 Vector oldEnc = state.at<RobotConfig>(ConfigSymbol(iter - 1)).getQ();
                 Vector toReturn = encoders[iter];
+                /*
                 for (size_t j = 0; j < arm->getNumDofs(); j++)
                 {
                     bool isFree = dynamic_cast<dart::dynamics::FreeJoint*>(arm->getDof(j)->getJoint()) != 0x0
@@ -351,6 +355,7 @@ namespace gtsam
                         toReturn(j) = oldEnc(j) + velocities[iter - 1][j];
                     }
                 }
+                */
                 return toReturn;
             }
         }
@@ -367,6 +372,7 @@ namespace gtsam
         nh.param("projection_noise_level", projectionNoiseLevel, projectionNoiseLevel);
         nh.param("drift_noise_level", driftNoise, driftNoise);
         nh.param("use_drift_noise", addDriftNoise, addDriftNoise);
+        nh.param("use_joint_encoders", useEncoderPositions, useEncoderPositions);
         nh.param("do_slam", doOptimize, doOptimize);
         nh.param("fx", fx, fx);
         nh.param("fy", fy, fy);
@@ -594,7 +600,7 @@ namespace gtsam
         simEEPublisher = nh.advertise<geometry_msgs::PoseStamped>("/in/pose", 10);
         arm->setPositions(qInit);
 
-        AddFactor(boost::make_shared<gtsam::PriorFactor<RobotConfig> >(ConfigSymbol(0), RobotConfig(simTrajectory.at(0), arm), initialPoseNoise));
+        //AddFactor(boost::make_shared<gtsam::PriorFactor<RobotConfig> >(ConfigSymbol(0), RobotConfig(simTrajectory.at(0), arm), initialPoseNoise));
     }
 
     void ArmSlamCalib::SimulateImageStep(size_t iter)
@@ -1481,11 +1487,13 @@ namespace gtsam
             if (!params.simulated)
             {
                 trajectory.push_back(q);
+                times.push_back(ros::Time::now().toSec());
             }
             else
             {
                 gtsam::Vector q_gt = GetSimRecordedJointAngles(stamp);
                 trajectory.push_back(q_gt);
+                times.push_back(ros::Time::now().toSec());
 
                 if (groundTruth.find(ConfigSymbol(timeIndex)) != groundTruth.end())
                     groundTruth.erase(ConfigSymbol(timeIndex));
@@ -1629,7 +1637,7 @@ namespace gtsam
         AddLandmarkPrior(i, landmark.position);
         for (size_t k = 0; k < landmark.observations.size(); k++)
         {
-            AddObservationFactor(landmark.observations.at(k), k, i);
+            AddObservationFactor(landmark.observations.at(k), landmark.configs.at(k), i);
         }
     }
 
@@ -1882,7 +1890,7 @@ namespace gtsam
                 AddLandmarkPrior(i, matchedLandmark.position);
                 for (size_t k = 0; k < matchedLandmark.observations.size(); k++)
                 {
-                    AddObservationFactor(matchedLandmark.observations.at(k), k, i);
+                    AddObservationFactor(matchedLandmark.observations.at(k), matchedLandmark.configs.at(k), i);
                 }
             }
             else if (matchedLandmark.isInGraph)

@@ -77,10 +77,10 @@ namespace gtsam
                         cx(640 / 2),
                         cy(480 /2),
                         encoderNoiseLevel(0.1),
-                        velocityNoiseLevel(0.001),
-                        extrinsicNoiseLevel(0.2),
-                        extrinsicRotNoiseLevel(0.2),
-                        landmarkNoiseLevel(30.0),
+                        velocityNoiseLevel(0.01),
+                        extrinsicNoiseLevel(0.1),
+                        extrinsicRotNoiseLevel(0.1),
+                        landmarkNoiseLevel(50.0),
                         driftNoise(0.05),
                         initialPosePriorNoise(0.00001),
                         projectionNoiseLevel(1.0),
@@ -98,6 +98,7 @@ namespace gtsam
                         simulated(false),
                         doOptimize(true),
                         useVelocityNoise(false),
+                        useEncoderPositions(true),
                         addSimPerlinNoise(true),
                         simPerlinMagnitude(0.2),
                         simPerlinFrequency(0.5)
@@ -141,6 +142,7 @@ namespace gtsam
                     bool simulated;
                     bool doOptimize;
                     bool useVelocityNoise;
+                    bool useEncoderPositions;
                     double deadBandSize;
                     bool addSimPerlinNoise;
                     double simPerlinMagnitude;
@@ -198,6 +200,24 @@ namespace gtsam
             gtsam::Pose3 GetCameraPose(const gtsam::Vector& jointAngles);
             gtsam::Pose3 GetCameraPose(const gtsam::Vector& jointAngles, const gtsam::Pose3& extr);
             gtsam::Pose3 GetCurrentExtrinsic();
+
+            inline const Eigen::aligned_vector<gtsam::Vector>& GetTrajectory() const { return trajectory; }
+
+            inline gtsam::Pose3 GetGroundTruthPose(size_t t)
+            {
+                return GetCameraPose(groundTruth.at<RobotConfig>(ConfigSymbol(t)).getQ(), GetSimExtrinsic());
+            }
+
+            inline gtsam::Pose3 GetEstimatePose(size_t t)
+            {
+                return GetCameraPose(currentEstimate.at<RobotConfig>(ConfigSymbol(t)).getQ(), GetCurrentExtrinsic());
+            }
+
+            inline gtsam::Pose3 GetInitialPose(size_t t)
+            {
+                return GetCameraPose(initialEstimate.at<RobotConfig>(ConfigSymbol(t)).getQ(), initialEstimate.at<Pose3>(ExtrinsicSymbol()));
+            }
+
             std::shared_ptr<joint_state_recorder::JointStateRecorder> GetJointRecodrer() { return jointRecorder; }
             gtsam::Vector GetRecordedJointAngles(const ros::Time& time);
             gtsam::Vector GetSimRecordedJointAngles(const ros::Time& time);
@@ -247,7 +267,7 @@ namespace gtsam
             void AddVelocityFactor(size_t idx);
             void AddObservationFactor(const gtsam::Point2& observation, size_t configIdx, size_t landmarkIdx);
             void SaveStitchedPointClouds(const std::string& file);
-
+            inline double GetTime(size_t iter) const { return times.at(iter); }
             gtsam::Vector GetPerlinNoise(const gtsam::Vector& pos, const double& freq, const double& mag);
             gtsam::Vector Diff(const gtsam::Vector& q1, const gtsam::Vector& q2);
             gtsam::Vector Wrap(const gtsam::Vector& q);
@@ -299,6 +319,7 @@ namespace gtsam
             dart::dynamics::BodyNode* cameraBody;
 
             Eigen::aligned_vector<gtsam::Vector> trajectory;
+            std::vector<double> times;
             Eigen::aligned_vector<gtsam::Vector> simTrajectory;
             Eigen::aligned_vector<gtsam::Vector> simEncoders;
             Eigen::aligned_vector<gtsam::Vector> encoders;

@@ -1,7 +1,7 @@
 <launch>
     <node name="arm_slam_calib" pkg="arm_slam_calib" type="sim_image" output="screen">
      <param name="use_sim_time"                   value="false" />
-     <param name="encoder_noise_level"            value="0.001"/>
+     <param name="encoder_noise_level"            value="0.01"/>
      <param name ="extrinsic_noise_level"         value="0.2"/>
      <param name="extrinsic_rot_noise_level"      value="0.1"/>
      <param name="landmark_noise_level"           value="50.0"/>

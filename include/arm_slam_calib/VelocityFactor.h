@@ -51,15 +51,13 @@ namespace gtsam
                     (*J2) = eye(q1.dim());
                 }
 
-                // TODO: THIS IS NOW WRONG BECAUSE FIRST 6 DOF ARE SE(3)!
-                // YOU CAN'T SIMPLY SUBTRACT THEM :( :(
                 gtsam::Vector diff = q0.localCoordinates(q1) - qDot;
-                /*
+
                 for (size_t i = 0; i < q0.dim(); i++)
                 {
                     diff(i) = (q1.getQ()(i) - q0.getQ()(i)) - (qDot(i));
                 }
-                */
+
                 return diff;
             }
 
