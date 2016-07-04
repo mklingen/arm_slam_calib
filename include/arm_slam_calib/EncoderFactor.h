@@ -62,10 +62,21 @@ namespace gtsam
                 gtsam::Vector diff = q - encoders;
                 for (size_t i = 0; i < robot.dim(); i++)
                 {
+                    /*
+                    // Free joints do not have encoders.
+                    if (robot.IsFree(i) || robot.IsPlanar(i))
+                    {
+                        diff(i) = 0;
+                    }
+                    */
+
+
+                    // Non-continuous joints can just be treated as real numbers
                     if (!robot.IsContinuous(i))
                     {
                         diff(i) = q(i) - encoders(i);
                     }
+                    // Other encoders must be mapped to SO(2).
                     else
                     {
                         diff(i) = utils::AngleDiff(q(i), encoders(i));
@@ -86,6 +97,17 @@ namespace gtsam
                     // encoders are directly related to the robot's
                     // configuration. TODO: Verify?
                     (*J) = eye(encoders.rows());
+
+                    /*
+                    for (size_t i = 0; i < q.dim(); i++)
+                    {
+                        // Free joints do not have encoders.
+                        if (q.IsFree(i) || q.IsPlanar(i))
+                        {
+                           J->col(i) *= 0;
+                        }
+                    }
+                    */
                 }
 
 #ifdef SANITY_CHECK

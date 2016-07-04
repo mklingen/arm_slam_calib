@@ -150,6 +150,10 @@ int main(int argc, char** argv)
     std::ofstream offsetFile("offsets.txt", std::ios::out);
     std::ofstream reprojectionFile("reproj_error.txt", std::ios::out);
     std::ofstream extrinsicFile("extrinsic_errors.txt", std::ios::out);
+    std::ofstream relativeTrajectory("relative_trajectory.txt", std::ios::out);
+
+    Eigen::Isometry3d initialPose = Eigen::Isometry3d(calib.GetCameraPose(calib.GetSimTrajectory().at(0), calib.GetSimExtrinsic()).matrix());
+    double initialTime = ros::Time::now().toSec();
 
     size_t simIter = 0;
     while (ros::ok())
@@ -279,6 +283,34 @@ int main(int argc, char** argv)
     {
         calib.PrintSimErrors(errorDir, "");
     }
+
+    auto traj = calib.GetTrajectory();
+
+    for (size_t trajIter = 0; trajIter < traj.size(); trajIter++)
+    {
+        try
+        {
+            Eigen::Isometry3d gtPose = initialPose.inverse() * Eigen::Isometry3d(calib.GetGroundTruthPose(trajIter).matrix());
+            Eigen::Isometry3d currentPose = initialPose.inverse() * Eigen::Isometry3d(calib.GetEstimatePose(trajIter).matrix());
+            Eigen::Isometry3d initEst = initialPose.inverse() * Eigen::Isometry3d(calib.GetInitialPose(trajIter).matrix());
+
+            double time = calib.GetTime(trajIter) - initialTime;
+            relativeTrajectory << time << " " << gtPose.translation()(0) <<
+                                          " " << gtPose.translation()(1) <<
+                                          " " << gtPose.translation()(2) <<
+                                          " " << currentPose.translation()(0) <<
+                                          " " << currentPose.translation()(1) <<
+                                          " " << currentPose.translation()(2) <<
+                                          " " << initEst.translation()(0) <<
+                                          " " << initEst.translation()(1) <<
+                                          " " << initEst.translation()(2) << std::endl;
+        }
+        catch (gtsam::ValuesKeyDoesNotExist& ex)
+        {
+            ROS_ERROR("%s", ex.what());
+        }
+    }
+
     offsetFile.close();
 }
 

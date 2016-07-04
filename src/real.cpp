@@ -88,7 +88,7 @@ int main(int argc, char** argv)
     // TODO!!;
     calib.InitializeJointRecorder(jointStateTopic);
 
-    ros::Rate hz(30);
+    ros::Rate hz(60);
 
     ROS_INFO("Warming up viewer...");
     for (size_t i = 0; i < 10; i++)

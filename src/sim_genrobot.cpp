@@ -47,7 +47,7 @@ int main(int argc, char** argv)
 {
     ros::init(argc, argv, "arm_calib_sim");
     ros::NodeHandle nh("~");
-    int num_dofs = 1;
+    int num_dofs = 6;
     nh.param("num_dofs", num_dofs, num_dofs);
     std::string dataDir = "~/.ros/";
     nh.param("data_dir", dataDir, dataDir);
@@ -65,16 +65,16 @@ int main(int argc, char** argv)
     params.simulated = true;
     params.InitializeNodehandleParams(nh);
     gtsam::Pose3 gt_pose = gtsam::Pose3(gtsam::Rot3::rodriguez(0, 1.57, 0), gtsam::Point3(0, 0, 0));
-    params.extrinsicInitialGuess = gtsam::Pose3(gtsam::Rot3::rodriguez(0.05, 1.57, 0.05), gtsam::Point3(0.1, 0.1, 0.1));
+    params.extrinsicInitialGuess = gtsam::Pose3(gtsam::Rot3::rodriguez(0.0, 1.57, 0.0), gtsam::Point3(0.1, 0.1, 0.1));
 
     gtsam::ArmSlamCalib calib(nh, std::make_shared<std::mutex>(), params);
     calib.SetSimExtrinsic(gt_pose);
-
+    size_t base_dofs = 6;
     std::vector<std::string> joints;
-    dart::dynamics::SkeletonPtr genSkeleton = dart::RobotGenerator::GenerateRobot(num_dofs, 0.5, 0.7, 0.01, 0.1);
+    dart::dynamics::SkeletonPtr genSkeleton = dart::RobotGenerator::GenerateRobot(num_dofs, 0.5, 0.7, 0.01, 0.1, false, base_dofs);
     for (size_t i = 0; i < genSkeleton->getNumDofs(); i++)
     {
-        joints.push_back(genSkeleton->getJoint(i)->getName());
+        joints.push_back(genSkeleton->getDof(i)->getName());
     }
     std::string cameraName = genSkeleton->getBodyNode(genSkeleton->getNumBodyNodes() - 1)->getName();
     calib.InitRobot(genSkeleton, joints, cameraName);
@@ -103,9 +103,12 @@ int main(int argc, char** argv)
             calib.OptimizeStep();
         }
 
-        //calib.DrawState(i, 0, calib.initialEstimate, 0.0f, 0.8f, 0.8f, 1.0f,  drawLandmark, drawTraj, drawObs, drawCamera);
+        calib.DrawState(i, 0, calib.initialEstimate, 0.0f, 0.8f, 0.8f, 1.0f,  false, true, false, false);
         calib.DrawState(i, 1, calib.currentEstimate, 0.8f, 0.0f, 0.0f, 1.0f,  drawLandmark, drawTraj, drawObs, drawCamera);
         calib.DrawState(i, 2, calib.groundTruth, 0.0f, 0.8f, 0.0f, 1.0f,  drawLandmark, drawTraj, drawObs, drawCamera);
+
+        std::cout << calib.currentEstimate.at<gtsam::RobotConfig>(gtsam::Symbol('q', i)).getQ().transpose() << std::endl;
+        std::cout << calib.groundTruth.at<gtsam::RobotConfig>(gtsam::Symbol('q', i)).getQ().transpose() << std::endl;
 
         gtsam::Vector err = calib.ComputeLatestJointAngleOffsets(i);
 
