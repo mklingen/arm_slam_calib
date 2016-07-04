@@ -323,7 +323,6 @@ namespace gtsam
         {
             AddVelocityFactor(iter);
         }
-        //SimulateObservations(iter);
         SimulateObservationsTriangulate(iter);
     }
 
@@ -344,7 +343,7 @@ namespace gtsam
             {
                 Vector oldEnc = state.at<RobotConfig>(ConfigSymbol(iter - 1)).getQ();
                 Vector toReturn = encoders[iter];
-                /*
+                
                 for (size_t j = 0; j < arm->getNumDofs(); j++)
                 {
                     bool isFree = dynamic_cast<dart::dynamics::FreeJoint*>(arm->getDof(j)->getJoint()) != 0x0
@@ -355,7 +354,7 @@ namespace gtsam
                         toReturn(j) = oldEnc(j) + velocities[iter - 1][j];
                     }
                 }
-                */
+                
                 return toReturn;
             }
         }
@@ -584,7 +583,7 @@ namespace gtsam
                 if (!isFree)
                     encoder(k) = q(k) + distribution(generator);
                 else
-                    encoder(k) = 0; //q(k) + distribution(generator);
+                    encoder(k) = 0;
 
                 noisyVelocity(k) = qDot(k) + velocityDistribution(generator);
 
@@ -599,8 +598,7 @@ namespace gtsam
         simJointPublisher_groundtruth = nh.advertise<sensor_msgs::JointState>("/sim_joints_groundtruth", 10);
         simEEPublisher = nh.advertise<geometry_msgs::PoseStamped>("/in/pose", 10);
         arm->setPositions(qInit);
-
-        //AddFactor(boost::make_shared<gtsam::PriorFactor<RobotConfig> >(ConfigSymbol(0), RobotConfig(simTrajectory.at(0), arm), initialPoseNoise));
+        
     }
 
     void ArmSlamCalib::SimulateImageStep(size_t iter)
@@ -791,7 +789,7 @@ namespace gtsam
 
     void ArmSlamCalib::Optimize()
     {
-        /*
+        /* TODO: Get rid of this debug code.
         LevenbergMarquardtParams params;
         params.verbosityLM = LevenbergMarquardtParams::TRYLAMBDA;
         params.maxIterations = 999999;
@@ -803,32 +801,18 @@ namespace gtsam
 
     bool ArmSlamCalib::ShouldCreateNewLandmark(const Landmark& landmark)
     {
+        // If a landmark exists already, don't create a new one with the same ID.
         if (landmarksObserved.find(landmark.id) != landmarksObserved.end())
         {
             return false;
         }
-
+        // Always create new landmarks when using April Tags
         if (frontEnd->GetMode() == FrontEnd::Mode_Apriltags)
         {
             return true;
         }
-
+        // Randomly cull all oher landmarks. TODO: Parameterize this
         return Rand(0, 1) < 0.1;
-        /*
-        const float distThreshold = 0.1f;
-
-        for (auto it = landmarksObserved.begin(); it != landmarksObserved.end(); it++)
-        {
-            double dist = (it->second.position - landmark.position).norm();
-
-            if (dist < distThreshold)
-            {
-                return false;
-            }
-        }
-
-        return true;
-        */
     }
 
     void ArmSlamCalib::DrawState(size_t iter, int id, const gtsam::Values& state, float r, float g, float b, float a,
@@ -877,14 +861,7 @@ namespace gtsam
                    p1.y = estLandmark.y();
                    p1.z = estLandmark.z();
                    landmarkViz.points.push_back(p1);
-                   /*
-                   std_msgs::ColorRGBA lcol;
-                   lcol.r = landmark.color.x();
-                   lcol.g = landmark.color.y();
-                   lcol.b = landmark.color.z();
-                   lcol.a = 1.0;
-                   */
-
+                   
                    if (!landmark.isTriangulated)
                        landmarkViz.colors.push_back(col1);
                    else
@@ -1153,11 +1130,13 @@ namespace gtsam
 
         ROS_INFO("Waiting for camera calibration...");
         calib = boost::make_shared<Cal3_S2>(params.fx, params.fy, 0.0, params.cx, params.cy);
+        
         // Camera calibration comes from ROS in this case, not from parameters!!
         if(!frontEnd->GetCameraCalibration(*calib))
         {
             ROS_ERROR("Unable to get camera calibration!");
         }
+
         calibrationPrior = noiseModel::Diagonal::Sigmas((Vector(6) << Vector3::Constant(params.extrinsicNoiseLevel), Vector3::Constant(params.extrinsicRotNoiseLevel)));
         AddFactor(boost::make_shared<PriorFactor<Pose3> >(ExtrinsicSymbol(), params.extrinsicInitialGuess, calibrationPrior));
         AddValue(ExtrinsicSymbol(), params.extrinsicInitialGuess);
@@ -1185,6 +1164,7 @@ namespace gtsam
          }
 
          calib = boost::make_shared<Cal3_S2>(params.fx, params.fy, 0.0, params.cx, params.cy);
+         
          // Camera calibration comes from ROS in this case, not from parameters!!
          if(!frontEnd->GetCameraCalibration(*calib))
          {
@@ -1219,6 +1199,7 @@ namespace gtsam
         }
 
         calib = boost::make_shared<Cal3_S2>(params.fx, params.fy, 0.0, params.cx, params.cy);
+        
         // Camera calibration comes from ROS in this case, not from parameters!!
         if(!frontEnd->GetCameraCalibration(*calib))
         {
@@ -1846,7 +1827,6 @@ namespace gtsam
         std::vector<gtsam::Point3> worldLandmarks;
         for (size_t i = 0; i < newLandmarks.size(); i++)
         {
-            //gtsam::Point3 worldPoint = cameraPose.transform_from(newLandmarks.at(i).position);
             gtsam::Point3 worldPoint = simLandmarks[newLandmarks.at(i).id];
             worldLandmarks.push_back(worldPoint);
         }
@@ -2026,7 +2006,6 @@ namespace gtsam
 
             if (ransac.computeModel(1))
             {
-                // assess success
                 size_t rel_pose_inliers = ransac.inliers_.size();
                 float rel_pose_ratio = float(rel_pose_inliers) / float(landmarks.size());
 
@@ -2065,7 +2044,6 @@ namespace gtsam
                         ROS_INFO("New landmark position is %f %f %f", pt.x(), pt.y(), pt.z());
                         UpdateLandmarkPos(existingLandmark.id, existingLandmark.position);
                     }
-                    //exit(-1);
                 }
                 else
                 {
@@ -2163,8 +2141,6 @@ namespace gtsam
                     noisy(j) += distribution(generator);
                 }
                 simEncoders.push_back(Wrap(noisy));
-                //simEncoders.push_back(Wrap(q + GetPerlinNoise(q, params.simPerlinFrequency, params.simPerlinMagnitude) - noiseOffset));
-                //simEncoders.push_back(Wrap(q + gtsam::Vector::Ones(arm->getNumDofs()) * 0.025));
             }
         }
         groundTruth.insert(ExtrinsicSymbol(), simExtrinsic);
